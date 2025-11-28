@@ -61,9 +61,12 @@ export async function discoverNewOutlets(filters: DiscoveryFilters = {}): Promis
   const existingNames = new Set(existingOutlets.map((o) => o.name.toLowerCase().trim()))
 
   const results: ScrapeResult[] = []
+  let geminiWorked = false
 
   // Try Gemini AI first for discovering real outlets
-  if (process.env.GEMINI_API_KEY) {
+  const geminiApiKey = process.env.GEMINI_API_KEY
+  if (geminiApiKey && geminiApiKey.length > 20) {
+    // Basic validation - real API keys are longer
     try {
       const countryLabel = getCountryLabel(country)
       const mediaTypeLabels = mediaTypes.map(getMediaTypeLabel).join(", ")
@@ -86,7 +89,7 @@ For each outlet, provide in this exact JSON format:
 Only include real, verifiable media outlets. Return valid JSON array only, no other text.`
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiApiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -136,26 +139,39 @@ Only include real, verifiable media outlets. Return valid JSON array only, no ot
               }
             }
 
-            console.log(`[v0] Gemini discovered ${results.length} outlets`)
+            if (results.length > 0) {
+              geminiWorked = true
+              console.log(`[v0] Gemini discovered ${results.length} outlets`)
+            }
           } catch (parseError) {
             console.error("[v0] Failed to parse Gemini response:", parseError)
           }
         }
+      } else {
+        // Log the error but continue to fallback
+        console.log("[v0] Gemini API returned non-OK status, using fallback outlets")
       }
     } catch (error) {
-      console.error("[v0] Gemini discovery error:", error)
+      console.log("[v0] Gemini discovery error, using fallback outlets:", error)
     }
+  } else {
+    console.log("[v0] No valid Gemini API key, using fallback outlets")
   }
 
-  // If we didn't get enough results, add some known outlets based on filters
-  if (results.length < outletsToFind) {
+  // If Gemini didn't work or didn't get enough results, use curated fallback list
+  if (!geminiWorked || results.length < outletsToFind) {
+    console.log("[v0] Using fallback outlets list")
     const fallbackOutlets = getFallbackOutlets(country, mediaTypes, minAudience, existingNames)
 
     for (const outlet of fallbackOutlets) {
       if (results.length >= outletsToFind) break
 
       const normalizedName = outlet.name.toLowerCase().trim()
-      const isDuplicate = existingNames.has(normalizedName)
+      const isDuplicate =
+        existingNames.has(normalizedName) ||
+        Array.from(existingNames).some(
+          (existing) => existing.includes(normalizedName) || normalizedName.includes(existing),
+        )
 
       results.push({
         outletId: outlet.name.toLowerCase().replace(/\s+/g, "-"),
@@ -171,8 +187,9 @@ Only include real, verifiable media outlets. Return valid JSON array only, no ot
   }
 
   // Simulate processing time
-  await new Promise((resolve) => setTimeout(resolve, 2000))
+  await new Promise((resolve) => setTimeout(resolve, 1500))
 
+  console.log(`[v0] Total discovered: ${results.length} outlets`)
   return results
 }
 
