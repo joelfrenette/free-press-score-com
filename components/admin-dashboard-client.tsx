@@ -92,15 +92,17 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
 
       if (data.results && Array.isArray(data.results)) {
         discoveredOutlets = data.results.map((r: any) => ({
-          name: r.data?.name || r.outletId || "Unknown Outlet",
+          name: r.data?.name || r.outletId?.replace(/-/g, " ") || "Unknown Outlet",
           website: r.data?.website,
-          country: r.data?.country || filters.country,
-          mediaType: r.data?.mediaType || filters.mediaTypes[0] || "unknown",
-          estimatedAudience: r.data?.estimatedAudience || filters.minAudience,
-          biasRating: r.data?.biasRating,
-          description:
-            r.data?.description || (r.success ? "Successfully discovered and added to database" : "Failed to process"),
-          status: r.success ? "added" : r.error?.includes("duplicate") ? "duplicate" : "failed",
+          country: r.data?.country || filters.country || "Unknown",
+          mediaType: r.data?.mediaType || filters.mediaTypes?.[0] || "unknown",
+          estimatedAudience: r.data?.estimatedAudience || filters.minAudience || 1000000,
+          description: r.data?.description || "Media outlet discovered via search.",
+          status: r.success
+            ? "added"
+            : r.error?.toLowerCase().includes("already exists") || r.error?.toLowerCase().includes("duplicate")
+              ? "duplicate"
+              : "failed",
           reason: r.error,
         }))
         setResults(data.results)
@@ -109,7 +111,7 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
         discoveredOutlets = [
           {
             name: "Error",
-            country: filters.country,
+            country: filters.country || "Unknown",
             mediaType: "unknown",
             estimatedAudience: 0,
             description: data.error,
@@ -143,7 +145,7 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
         outlets: [
           {
             name: "Error",
-            country: filters.country,
+            country: "Unknown",
             mediaType: "unknown",
             estimatedAudience: 0,
             description: errorMessage,
@@ -155,7 +157,7 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
         totalAdded: 0,
         totalDuplicates: 0,
         totalFailed: 1,
-        searchFilters: filters,
+        searchFilters: {},
         timestamp: new Date(),
       }
     } finally {

@@ -36,8 +36,6 @@ export interface DiscoveryFilters {
   country: string
   mediaTypes: string[]
   minAudience: number
-  maxBiasRating: number
-  minBiasRating: number
   outletsToFind: number
 }
 
@@ -47,7 +45,6 @@ export interface DiscoveredOutlet {
   country: string
   mediaType: string
   estimatedAudience: number
-  biasRating?: number
   description: string
   status: "added" | "duplicate" | "failed"
   reason?: string
@@ -120,7 +117,6 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
   const [country, setCountry] = useState("all")
   const [mediaTypes, setMediaTypes] = useState<string[]>(["tv", "print", "social"])
   const [minAudience, setMinAudience] = useState(1000000)
-  const [biasRange, setBiasRange] = useState([0, 100])
   const [outletsToFind, setOutletsToFind] = useState(12)
 
   const [view, setView] = useState<"filters" | "loading" | "results">("filters")
@@ -137,8 +133,6 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
         country,
         mediaTypes,
         minAudience,
-        minBiasRating: biasRange[0],
-        maxBiasRating: biasRange[1],
         outletsToFind,
       })
       setResults(discoveryResults)
@@ -200,15 +194,12 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
           </div>
         </div>
 
-        {/* Search Filters Used */}
+        {/* Search Filters Used - Removed bias badge */}
         <div className="rounded-lg border bg-muted/30 p-3 mb-4">
           <div className="text-sm font-medium mb-2">Search Filters Used:</div>
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">{getCountryLabel(results.searchFilters.country)}</Badge>
             <Badge variant="outline">{formatAudience(results.searchFilters.minAudience)}+ audience</Badge>
-            <Badge variant="outline">
-              Bias: {results.searchFilters.minBiasRating}-{results.searchFilters.maxBiasRating}
-            </Badge>
             {results.searchFilters.mediaTypes.map((type) => (
               <Badge key={type} variant="secondary">
                 {getMediaTypeLabel(type)}
@@ -217,7 +208,7 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
           </div>
         </div>
 
-        {/* Results List */}
+        {/* Results List - Improved outlet display with clearer names */}
         <ScrollArea className="h-[300px] rounded-lg border">
           <div className="p-4 space-y-3">
             {results.outlets.map((outlet, index) => (
@@ -237,7 +228,12 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
                       {outlet.status === "added" && <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />}
                       {outlet.status === "duplicate" && <AlertCircle className="h-4 w-4 text-yellow-500 shrink-0" />}
                       {outlet.status === "failed" && <XCircle className="h-4 w-4 text-red-500 shrink-0" />}
-                      <span className="font-semibold truncate">{outlet.name}</span>
+                      <span className="font-semibold text-base">{outlet.name}</span>
+                      {outlet.status === "duplicate" && (
+                        <Badge variant="outline" className="text-yellow-600 border-yellow-500/50 text-xs">
+                          Already Exists
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{outlet.description}</p>
                     <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -250,11 +246,6 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
                       <Badge variant="outline" className="text-xs">
                         {formatAudience(outlet.estimatedAudience)} audience
                       </Badge>
-                      {outlet.biasRating !== undefined && (
-                        <Badge variant="outline" className="text-xs">
-                          Bias: {outlet.biasRating}
-                        </Badge>
-                      )}
                     </div>
                     {outlet.reason && <p className="text-xs text-muted-foreground mt-2 italic">{outlet.reason}</p>}
                   </div>
@@ -387,22 +378,6 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
             <span>1M</span>
             <span>10M</span>
             <span>100M</span>
-          </div>
-        </div>
-
-        {/* Bias Rating Range */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium">Bias Rating Range</Label>
-            <span className="text-sm font-bold text-primary">
-              {biasRange[0]} - {biasRange[1]}
-            </span>
-          </div>
-          <Slider value={biasRange} onValueChange={setBiasRange} min={0} max={100} step={5} className="w-full" />
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Far Left (0)</span>
-            <span>Center (50)</span>
-            <span>Far Right (100)</span>
           </div>
         </div>
 
