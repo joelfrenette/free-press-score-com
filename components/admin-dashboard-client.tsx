@@ -1,139 +1,254 @@
-'use client'
+"use client"
 
-import { useState } from 'react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RefreshCw, Database, CheckCircle, XCircle, AlertCircle, Play, Lock, Search, Users, DollarSign, Scale, FileText, TrendingUp } from 'lucide-react';
-import Link from 'next/link';
+import type React from "react"
+
+import { useState } from "react"
+import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  RefreshCw,
+  Database,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Lock,
+  Search,
+  Users,
+  DollarSign,
+  Scale,
+  FileText,
+  TrendingUp,
+} from "lucide-react"
+import Link from "next/link"
+import {
+  DiscoverOutletsDialog,
+  type DiscoveryFilters,
+  type DiscoveryResults,
+  type DiscoveredOutlet,
+} from "./discover-outlets-dialog"
 
 interface ScrapeResult {
-  outletId: string;
-  success: boolean;
-  data?: any;
-  error?: string;
+  outletId: string
+  success: boolean
+  data?: any
+  error?: string
 }
 
 interface AdminDashboardClientProps {
-  hasApiKey: boolean;
-  totalOutlets: number;
+  hasApiKey: boolean
+  totalOutlets: number
   scrapableOutlets: Array<{
-    id: string;
-    name: string;
-    platform?: string;
-    outletType: string;
-  }>;
+    id: string
+    name: string
+    platform?: string
+    outletType: string
+  }>
 }
 
 export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets }: AdminDashboardClientProps) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  
-  const [isScraping, setIsScraping] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [results, setResults] = useState<ScrapeResult[]>([]);
-  const [activeOperation, setActiveOperation] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [loginError, setLoginError] = useState("")
+
+  const [isScraping, setIsScraping] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [results, setResults] = useState<ScrapeResult[]>([])
+  const [activeOperation, setActiveOperation] = useState<string | null>(null)
 
   const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError('');
-    
-    if (email === 'joelfrenette@gmail.com' && password === 'Japan2025!') {
-      setIsAuthenticated(true);
+    e.preventDefault()
+    setLoginError("")
+
+    if (email === "joelfrenette@gmail.com" && password === "Japan2025!") {
+      setIsAuthenticated(true)
     } else {
-      setLoginError('Invalid email or password');
+      setLoginError("Invalid email or password")
     }
-  };
+  }
+
+  const handleDiscoverWithFilters = async (filters: DiscoveryFilters): Promise<DiscoveryResults> => {
+    setIsScraping(true)
+    setActiveOperation("discover")
+    setProgress(0)
+    setResults([])
+
+    try {
+      const response = await fetch("/api/scrape/discover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filters,
+          operationType: "discover",
+        }),
+      })
+
+      const data = await response.json()
+
+      let discoveredOutlets: DiscoveredOutlet[] = []
+
+      if (data.results && Array.isArray(data.results)) {
+        discoveredOutlets = data.results.map((r: any) => ({
+          name: r.data?.name || r.outletId || "Unknown Outlet",
+          website: r.data?.website,
+          country: r.data?.country || filters.country,
+          mediaType: r.data?.mediaType || filters.mediaTypes[0] || "unknown",
+          estimatedAudience: r.data?.estimatedAudience || filters.minAudience,
+          biasRating: r.data?.biasRating,
+          description:
+            r.data?.description || (r.success ? "Successfully discovered and added to database" : "Failed to process"),
+          status: r.success ? "added" : r.error?.includes("duplicate") ? "duplicate" : "failed",
+          reason: r.error,
+        }))
+        setResults(data.results)
+        setProgress(100)
+      } else if (data.error) {
+        discoveredOutlets = [
+          {
+            name: "Error",
+            country: filters.country,
+            mediaType: "unknown",
+            estimatedAudience: 0,
+            description: data.error,
+            status: "failed",
+            reason: data.error,
+          },
+        ]
+        setResults([{ outletId: "error", success: false, error: data.error }])
+        setProgress(100)
+      }
+
+      const totalAdded = discoveredOutlets.filter((o) => o.status === "added").length
+      const totalDuplicates = discoveredOutlets.filter((o) => o.status === "duplicate").length
+      const totalFailed = discoveredOutlets.filter((o) => o.status === "failed").length
+
+      return {
+        outlets: discoveredOutlets,
+        totalFound: discoveredOutlets.length,
+        totalAdded,
+        totalDuplicates,
+        totalFailed,
+        searchFilters: filters,
+        timestamp: new Date(),
+      }
+    } catch (error) {
+      console.error("[v0] Bulk discover error:", error)
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+      setResults([{ outletId: "error", success: false, error: errorMessage }])
+
+      return {
+        outlets: [
+          {
+            name: "Error",
+            country: filters.country,
+            mediaType: "unknown",
+            estimatedAudience: 0,
+            description: errorMessage,
+            status: "failed",
+            reason: errorMessage,
+          },
+        ],
+        totalFound: 0,
+        totalAdded: 0,
+        totalDuplicates: 0,
+        totalFailed: 1,
+        searchFilters: filters,
+        timestamp: new Date(),
+      }
+    } finally {
+      setIsScraping(false)
+      setActiveOperation(null)
+    }
+  }
 
   const handleBulkOperation = async (operationType: string) => {
-    setIsScraping(true);
-    setActiveOperation(operationType);
-    setProgress(0);
-    setResults([]);
+    setIsScraping(true)
+    setActiveOperation(operationType)
+    setProgress(0)
+    setResults([])
 
-    let outletsToProcess = [];
-    let endpoint = '/api/scrape';
+    let outletsToProcess = []
+    let endpoint = "/api/scrape"
 
     switch (operationType) {
-      case 'discover':
-        endpoint = '/api/scrape/discover';
-        break;
-      case 'ownership':
-        endpoint = '/api/scrape/ownership';
-        outletsToProcess = scrapableOutlets.slice(0, 20);
-        break;
-      case 'funding':
-        endpoint = '/api/scrape/funding';
-        outletsToProcess = scrapableOutlets.slice(0, 20);
-        break;
-      case 'legal':
-        endpoint = '/api/scrape/legal';
-        outletsToProcess = scrapableOutlets.slice(0, 20);
-        break;
-      case 'accountability':
-        endpoint = '/api/scrape/accountability';
-        outletsToProcess = scrapableOutlets.slice(0, 20);
-        break;
-      case 'audience':
-        outletsToProcess = scrapableOutlets.slice(0, 10).map(outlet => ({
+      case "ownership":
+        endpoint = "/api/scrape/ownership"
+        outletsToProcess = scrapableOutlets.slice(0, 20)
+        break
+      case "funding":
+        endpoint = "/api/scrape/funding"
+        outletsToProcess = scrapableOutlets.slice(0, 20)
+        break
+      case "legal":
+        endpoint = "/api/scrape/legal"
+        outletsToProcess = scrapableOutlets.slice(0, 20)
+        break
+      case "accountability":
+        endpoint = "/api/scrape/accountability"
+        outletsToProcess = scrapableOutlets.slice(0, 20)
+        break
+      case "audience":
+        outletsToProcess = scrapableOutlets.slice(0, 10).map((outlet) => ({
           id: outlet.id,
-          url: `https://www.${outlet.platform}.com/@${outlet.name.toLowerCase().replace(/\s+/g, '')}`,
-          platform: outlet.platform || 'youtube',
-        }));
-        break;
-      case 'merge':
-        endpoint = '/api/scrape/merge';
-        outletsToProcess = scrapableOutlets;
-        break;
-      case 'logos':
-        endpoint = '/api/scrape/logos';
-        outletsToProcess = scrapableOutlets.slice(0, 30);
-        break;
+          url: `https://www.${outlet.platform}.com/@${outlet.name.toLowerCase().replace(/\s+/g, "")}`,
+          platform: outlet.platform || "youtube",
+        }))
+        break
+      case "merge":
+        endpoint = "/api/scrape/merge"
+        outletsToProcess = scrapableOutlets
+        break
+      case "logos":
+        endpoint = "/api/scrape/logos"
+        outletsToProcess = scrapableOutlets.slice(0, 30)
+        break
     }
 
     try {
       const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           outlets: outletsToProcess,
-          operationType 
+          operationType,
         }),
-      });
+      })
 
-      const data = await response.json();
-      
+      const data = await response.json()
+
       if (data.results && Array.isArray(data.results)) {
-        setResults(data.results);
-        setProgress(100);
+        setResults(data.results)
+        setProgress(100)
       } else if (data.error) {
-        setResults([{
-          outletId: 'error',
-          success: false,
-          error: data.error
-        }]);
-        setProgress(100);
+        setResults([
+          {
+            outletId: "error",
+            success: false,
+            error: data.error,
+          },
+        ])
+        setProgress(100)
       } else {
-        setResults([]);
-        setProgress(100);
+        setResults([])
+        setProgress(100)
       }
     } catch (error) {
-      console.error(`[v0] Bulk ${operationType} error:`, error);
-      setResults([{
-        outletId: 'error',
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      }]);
+      console.error(`[v0] Bulk ${operationType} error:`, error)
+      setResults([
+        {
+          outletId: "error",
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error occurred",
+        },
+      ])
     } finally {
-      setIsScraping(false);
-      setActiveOperation(null);
+      setIsScraping(false)
+      setActiveOperation(null)
     }
-  };
+  }
 
   if (!isAuthenticated) {
     return (
@@ -144,7 +259,7 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
               <Lock className="h-8 w-8 text-primary" />
             </div>
           </div>
-          
+
           <h1 className="mb-2 text-center text-2xl font-bold text-foreground">Admin Login</h1>
           <p className="mb-6 text-center text-sm text-muted-foreground">
             Enter your credentials to access the admin dashboard
@@ -195,20 +310,18 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
           </div>
         </Card>
       </div>
-    );
+    )
   }
 
-  const successCount = Array.isArray(results) ? results.filter(r => r.success).length : 0;
-  const failCount = Array.isArray(results) ? results.filter(r => !r.success).length : 0;
+  const successCount = Array.isArray(results) ? results.filter((r) => r.success).length : 0
+  const failCount = Array.isArray(results) ? results.filter((r) => !r.success).length : 0
 
   return (
     <div className="container mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="mb-2 text-3xl font-bold text-foreground">Admin Dashboard</h1>
-          <p className="text-muted-foreground">
-            Manage data scraping and updates for media outlets
-          </p>
+          <p className="text-muted-foreground">Manage data scraping and updates for media outlets</p>
         </div>
         <Button variant="outline" onClick={() => setIsAuthenticated(false)}>
           Logout
@@ -252,7 +365,6 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
 
       {/* Bulk Scraping Control */}
       <div className="mb-8 grid gap-6 md:grid-cols-3">
-        {/* Discover New Outlets */}
         <Card className="p-6">
           <div className="mb-4 flex items-start gap-4">
             <div className="rounded-lg bg-primary/10 p-3">
@@ -260,29 +372,14 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-foreground">Discover New Outlets</h3>
-              <p className="text-sm text-muted-foreground">
-                Search for new media outlets with over 1M monthly audience
-              </p>
+              <p className="text-sm text-muted-foreground">Search for new media outlets with customizable filters</p>
             </div>
           </div>
-          <Button
-            onClick={() => handleBulkOperation('discover')}
+          <DiscoverOutletsDialog
+            onDiscover={handleDiscoverWithFilters}
+            isLoading={isScraping && activeOperation === "discover"}
             disabled={isScraping || !hasApiKey}
-            className="w-full gap-2"
-            variant="default"
-          >
-            {isScraping && activeOperation === 'discover' ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Searching...
-              </>
-            ) : (
-              <>
-                <Search className="h-4 w-4" />
-                Discover Outlets
-              </>
-            )}
-          </Button>
+          />
         </Card>
 
         {/* Update Ownership */}
@@ -293,18 +390,16 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-foreground">Update Ownership</h3>
-              <p className="text-sm text-muted-foreground">
-                Refresh stakeholder and board member information
-              </p>
+              <p className="text-sm text-muted-foreground">Refresh stakeholder and board member information</p>
             </div>
           </div>
           <Button
-            onClick={() => handleBulkOperation('ownership')}
+            onClick={() => handleBulkOperation("ownership")}
             disabled={isScraping || !hasApiKey}
             className="w-full gap-2"
             variant="default"
           >
-            {isScraping && activeOperation === 'ownership' ? (
+            {isScraping && activeOperation === "ownership" ? (
               <>
                 <RefreshCw className="h-4 w-4 animate-spin" />
                 Updating...
@@ -326,18 +421,16 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-foreground">Update Funding</h3>
-              <p className="text-sm text-muted-foreground">
-                Research sponsorships and financial supporters
-              </p>
+              <p className="text-sm text-muted-foreground">Research sponsorships and financial supporters</p>
             </div>
           </div>
           <Button
-            onClick={() => handleBulkOperation('funding')}
+            onClick={() => handleBulkOperation("funding")}
             disabled={isScraping || !hasApiKey}
             className="w-full gap-2"
             variant="default"
           >
-            {isScraping && activeOperation === 'funding' ? (
+            {isScraping && activeOperation === "funding" ? (
               <>
                 <RefreshCw className="h-4 w-4 animate-spin" />
                 Researching...
@@ -359,18 +452,16 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-foreground">Research Legal Cases</h3>
-              <p className="text-sm text-muted-foreground">
-                Find defamation suits, settlements, and court proceedings
-              </p>
+              <p className="text-sm text-muted-foreground">Find defamation suits, settlements, and court proceedings</p>
             </div>
           </div>
           <Button
-            onClick={() => handleBulkOperation('legal')}
+            onClick={() => handleBulkOperation("legal")}
             disabled={isScraping || !hasApiKey}
             className="w-full gap-2"
             variant="default"
           >
-            {isScraping && activeOperation === 'legal' ? (
+            {isScraping && activeOperation === "legal" ? (
               <>
                 <RefreshCw className="h-4 w-4 animate-spin" />
                 Researching...
@@ -392,18 +483,16 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-foreground">Update Accountability</h3>
-              <p className="text-sm text-muted-foreground">
-                Count retractions, errata, and update scores
-              </p>
+              <p className="text-sm text-muted-foreground">Count retractions, errata, and update scores</p>
             </div>
           </div>
           <Button
-            onClick={() => handleBulkOperation('accountability')}
+            onClick={() => handleBulkOperation("accountability")}
             disabled={isScraping || !hasApiKey}
             className="w-full gap-2"
             variant="default"
           >
-            {isScraping && activeOperation === 'accountability' ? (
+            {isScraping && activeOperation === "accountability" ? (
               <>
                 <RefreshCw className="h-4 w-4 animate-spin" />
                 Counting...
@@ -425,18 +514,16 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-foreground">Update Audience Data</h3>
-              <p className="text-sm text-muted-foreground">
-                Refresh follower counts and viewership metrics
-              </p>
+              <p className="text-sm text-muted-foreground">Refresh follower counts and viewership metrics</p>
             </div>
           </div>
           <Button
-            onClick={() => handleBulkOperation('audience')}
+            onClick={() => handleBulkOperation("audience")}
             disabled={isScraping || !hasApiKey}
             className="w-full gap-2"
             variant="default"
           >
-            {isScraping && activeOperation === 'audience' ? (
+            {isScraping && activeOperation === "audience" ? (
               <>
                 <RefreshCw className="h-4 w-4 animate-spin" />
                 Updating...
@@ -458,18 +545,16 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-foreground">Merge Duplicates</h3>
-              <p className="text-sm text-muted-foreground">
-                Identify and merge duplicate media outlet entries
-              </p>
+              <p className="text-sm text-muted-foreground">Identify and merge duplicate media outlet entries</p>
             </div>
           </div>
           <Button
-            onClick={() => handleBulkOperation('merge')}
+            onClick={() => handleBulkOperation("merge")}
             disabled={isScraping || !hasApiKey}
             className="w-full gap-2"
             variant="default"
           >
-            {isScraping && activeOperation === 'merge' ? (
+            {isScraping && activeOperation === "merge" ? (
               <>
                 <RefreshCw className="h-4 w-4 animate-spin" />
                 Merging...
@@ -497,12 +582,12 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
             </div>
           </div>
           <Button
-            onClick={() => handleBulkOperation('logos')}
+            onClick={() => handleBulkOperation("logos")}
             disabled={isScraping || !hasApiKey}
             className="w-full gap-2"
             variant="default"
           >
-            {isScraping && activeOperation === 'logos' ? (
+            {isScraping && activeOperation === "logos" ? (
               <>
                 <RefreshCw className="h-4 w-4 animate-spin" />
                 Updating...
@@ -522,14 +607,14 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
           <div className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <span className="font-medium text-foreground">
-                {activeOperation === 'discover' && 'Discovering new outlets...'}
-                {activeOperation === 'ownership' && 'Updating ownership data...'}
-                {activeOperation === 'funding' && 'Researching funding sources...'}
-                {activeOperation === 'legal' && 'Researching legal cases...'}
-                {activeOperation === 'accountability' && 'Counting retractions and errata...'}
-                {activeOperation === 'audience' && 'Updating audience metrics...'}
-                {activeOperation === 'merge' && 'Identifying and merging duplicates...'}
-                {activeOperation === 'logos' && 'Updating media outlet logos...'}
+                {activeOperation === "discover" && "Discovering new outlets..."}
+                {activeOperation === "ownership" && "Updating ownership data..."}
+                {activeOperation === "funding" && "Researching funding sources..."}
+                {activeOperation === "legal" && "Researching legal cases..."}
+                {activeOperation === "accountability" && "Counting retractions and errata..."}
+                {activeOperation === "audience" && "Updating audience metrics..."}
+                {activeOperation === "merge" && "Identifying and merging duplicates..."}
+                {activeOperation === "logos" && "Updating media outlet logos..."}
               </span>
               <span className="text-sm font-medium text-foreground">{progress}%</span>
             </div>
@@ -545,8 +630,8 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
             <div>
               <h3 className="mb-1 font-semibold text-foreground">API Key Required</h3>
               <p className="text-sm text-muted-foreground">
-                Please add SCRAPINGBEE_API_KEY to your environment variables in the Vars section
-                to enable data scraping.
+                Please add SCRAPINGBEE_API_KEY to your environment variables in the Vars section to enable data
+                scraping.
               </p>
             </div>
           </div>
@@ -559,11 +644,11 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
           <h2 className="mb-4 text-xl font-bold text-foreground">Scraping Results</h2>
           <div className="space-y-2">
             {results.map((result, index) => {
-              const outlet = scrapableOutlets.find(o => o.id === result.outletId);
+              const outlet = scrapableOutlets.find((o) => o.id === result.outletId)
               return (
                 <div
                   key={index}
-                  className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-4"
+                  className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-3"
                 >
                   <div className="flex items-center gap-3">
                     {result.success ? (
@@ -571,33 +656,21 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
                     ) : (
                       <XCircle className="h-5 w-5 text-destructive" />
                     )}
-                    <div>
-                      <div className="font-medium text-foreground">{outlet?.name}</div>
-                      {result.success ? (
-                        <div className="text-sm text-muted-foreground">
-                          Followers: {result.data?.followerCount}
-                        </div>
-                      ) : (
-                        <div className="text-sm text-destructive">{result.error}</div>
-                      )}
-                    </div>
+                    <span className="font-medium text-foreground">{outlet?.name || result.outletId}</span>
                   </div>
-                  <Badge variant={result.success ? 'default' : 'destructive'}>
-                    {result.success ? 'Success' : 'Failed'}
-                  </Badge>
+                  <div className="text-sm text-muted-foreground">
+                    {result.success ? (
+                      result.data?.message || "Updated successfully"
+                    ) : (
+                      <span className="text-destructive">{result.error}</span>
+                    )}
+                  </div>
                 </div>
-              );
+              )
             })}
           </div>
         </Card>
       )}
-
-      {/* Back to Dashboard */}
-      <div className="mt-8">
-        <Link href="/">
-          <Button variant="outline">Back to Dashboard</Button>
-        </Link>
-      </div>
     </div>
-  );
+  )
 }
