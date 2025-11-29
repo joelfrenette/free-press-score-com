@@ -363,11 +363,13 @@ export function AdminOperationDialog({
                       error: data.result?.error,
                     })
                   } else if (data.type === "complete") {
+                    console.log("[v0] Received complete event:", data)
                     const operationResults: OperationResults = {
                       results: allResults,
-                      totalProcessed: data.totalProcessed,
-                      totalSuccess: data.totalSuccess,
-                      totalFailed: data.totalFailed,
+                      // Use server values if available, otherwise calculate from allResults
+                      totalProcessed: data.totalProcessed ?? allResults.length,
+                      totalSuccess: data.totalSuccess ?? allResults.filter((r) => r.success).length,
+                      totalFailed: data.totalFailed ?? allResults.filter((r) => !r.success).length,
                       timestamp: new Date(),
                       filters,
                     }
