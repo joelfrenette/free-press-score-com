@@ -4,7 +4,6 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -21,6 +20,7 @@ import {
   FileText,
   TrendingUp,
   Copy,
+  ImageIcon,
 } from "lucide-react"
 import Link from "next/link"
 import {
@@ -30,6 +30,7 @@ import {
   type DiscoveredOutlet,
 } from "./discover-outlets-dialog"
 import { MergeDuplicatesDialog } from "./merge-duplicates-dialog"
+import { AdminOperationDialog, type OperationResults, type OperationType } from "./admin-operation-dialog"
 
 interface ScrapeResult {
   outletId: string
@@ -69,6 +70,12 @@ export function AdminDashboardClient({
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   const [showMergeDuplicatesDialog, setShowMergeDuplicatesDialog] = useState(false)
+  const [lastOperationResults, setLastOperationResults] = useState<{
+    type: string
+    success: number
+    failed: number
+    timestamp: Date
+  } | null>(null)
 
   const refreshAllStats = async () => {
     setIsRefreshing(true)
@@ -85,22 +92,6 @@ export function AdminDashboardClient({
       setIsRefreshing(false)
     }
   }
-
-  const refreshOutletCount = async () => {
-    try {
-      const response = await fetch("/api/outlets/count", { cache: "no-store" })
-      if (response.ok) {
-        const data = await response.json()
-        setCurrentOutletCount(data.count)
-      }
-    } catch (error) {
-      console.error("Error refreshing outlet count:", error)
-    }
-  }
-
-  useEffect(() => {
-    refreshAllStats()
-  }, [])
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
@@ -218,91 +209,20 @@ export function AdminDashboardClient({
     }
   }
 
-  const handleBulkOperation = async (operationType: string) => {
-    setIsScraping(true)
-    setActiveOperation(operationType)
-    setProgress(0)
-    setResults([])
-
-    let outletsToProcess = []
-    let endpoint = "/api/scrape"
-
-    switch (operationType) {
-      case "ownership":
-        endpoint = "/api/scrape/ownership"
-        outletsToProcess = scrapableOutlets.slice(0, 20)
-        break
-      case "funding":
-        endpoint = "/api/scrape/funding"
-        outletsToProcess = scrapableOutlets.slice(0, 20)
-        break
-      case "legal":
-        endpoint = "/api/scrape/legal"
-        outletsToProcess = scrapableOutlets.slice(0, 20)
-        break
-      case "accountability":
-        endpoint = "/api/scrape/accountability"
-        outletsToProcess = scrapableOutlets.slice(0, 20)
-        break
-      case "audience":
-        outletsToProcess = scrapableOutlets.slice(0, 10).map((outlet) => ({
-          id: outlet.id,
-          url: `https://www.${outlet.platform}.com/@${outlet.name.toLowerCase().replace(/\s+/g, "")}`,
-          platform: outlet.platform || "youtube",
-        }))
-        break
-      case "merge":
-        endpoint = "/api/scrape/merge"
-        outletsToProcess = scrapableOutlets
-        break
-      case "logos":
-        endpoint = "/api/scrape/logos"
-        outletsToProcess = scrapableOutlets.slice(0, 30)
-        break
-    }
-
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          outlets: outletsToProcess,
-          operationType,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (data.results && Array.isArray(data.results)) {
-        setResults(data.results)
-        setProgress(100)
-      } else if (data.error) {
-        setResults([
-          {
-            outletId: "error",
-            success: false,
-            error: data.error,
-          },
-        ])
-        setProgress(100)
-      } else {
-        setResults([])
-        setProgress(100)
-      }
-    } catch (error) {
-      console.error(`[v0] Bulk ${operationType} error:`, error)
-      setResults([
-        {
-          outletId: "error",
-          success: false,
-          error: error instanceof Error ? error.message : "Unknown error occurred",
-        },
-      ])
-    } finally {
-      setIsScraping(false)
-      setActiveOperation(null)
-    }
+  const handleOperationComplete = (operationType: OperationType, results: OperationResults) => {
+    setLastOperationResults({
+      type: operationType,
+      success: results.totalSuccess,
+      failed: results.totalFailed,
+      timestamp: results.timestamp,
+    })
+    // Refresh stats to show updated totals
+    refreshAllStats()
   }
+
+  useEffect(() => {
+    refreshAllStats()
+  }, [])
 
   if (!isAuthenticated) {
     return (
@@ -367,8 +287,10 @@ export function AdminDashboardClient({
     )
   }
 
-  const successCount = Array.isArray(results) ? results.filter((r) => r.success).length : 0
-  const failCount = Array.isArray(results) ? results.filter((r) => !r.success).length : 0
+  const successCount =
+    lastOperationResults?.success ?? (Array.isArray(results) ? results.filter((r) => r.success).length : 0)
+  const failCount =
+    lastOperationResults?.failed ?? (Array.isArray(results) ? results.filter((r) => !r.success).length : 0)
 
   return (
     <div className="container mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -409,15 +331,18 @@ export function AdminDashboardClient({
         <Card className="p-6">
           <div className="mb-2 flex items-center gap-2">
             <CheckCircle className="h-5 w-5 text-green-600" />
-            <span className="text-sm font-medium text-muted-foreground">Success</span>
+            <span className="text-sm font-medium text-muted-foreground">Last Success</span>
           </div>
           <div className="text-3xl font-bold text-green-600">{successCount}</div>
+          {lastOperationResults && (
+            <p className="text-xs text-muted-foreground mt-1">{lastOperationResults.type} operation</p>
+          )}
         </Card>
 
         <Card className="p-6">
           <div className="mb-2 flex items-center gap-2">
             <XCircle className="h-5 w-5 text-destructive" />
-            <span className="text-sm font-medium text-muted-foreground">Failed</span>
+            <span className="text-sm font-medium text-muted-foreground">Last Failed</span>
           </div>
           <div className="text-3xl font-bold text-destructive">{failCount}</div>
         </Card>
@@ -425,6 +350,7 @@ export function AdminDashboardClient({
 
       {/* Bulk Scraping Control */}
       <div className="mb-8 grid gap-6 md:grid-cols-3">
+        {/* Discover New Outlets */}
         <Card className="p-6">
           <div className="mb-4 flex items-start gap-4">
             <div className="rounded-lg bg-primary/10 p-3">
@@ -453,24 +379,12 @@ export function AdminDashboardClient({
               <p className="text-sm text-muted-foreground">Refresh stakeholder and board member information</p>
             </div>
           </div>
-          <Button
-            onClick={() => handleBulkOperation("ownership")}
+          <AdminOperationDialog
+            operationType="ownership"
+            scrapableOutlets={scrapableOutlets}
             disabled={isScraping || !hasApiKey}
-            className="w-full gap-2"
-            variant="default"
-          >
-            {isScraping && activeOperation === "ownership" ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Updating...
-              </>
-            ) : (
-              <>
-                <Users className="h-4 w-4" />
-                Update Ownership
-              </>
-            )}
-          </Button>
+            onOperationComplete={(results) => handleOperationComplete("ownership", results)}
+          />
         </Card>
 
         {/* Update Funding */}
@@ -484,24 +398,12 @@ export function AdminDashboardClient({
               <p className="text-sm text-muted-foreground">Research sponsorships and financial supporters</p>
             </div>
           </div>
-          <Button
-            onClick={() => handleBulkOperation("funding")}
+          <AdminOperationDialog
+            operationType="funding"
+            scrapableOutlets={scrapableOutlets}
             disabled={isScraping || !hasApiKey}
-            className="w-full gap-2"
-            variant="default"
-          >
-            {isScraping && activeOperation === "funding" ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Researching...
-              </>
-            ) : (
-              <>
-                <DollarSign className="h-4 w-4" />
-                Update Funding
-              </>
-            )}
-          </Button>
+            onOperationComplete={(results) => handleOperationComplete("funding", results)}
+          />
         </Card>
 
         {/* Research Legal Cases */}
@@ -515,24 +417,12 @@ export function AdminDashboardClient({
               <p className="text-sm text-muted-foreground">Find defamation suits, settlements, and court proceedings</p>
             </div>
           </div>
-          <Button
-            onClick={() => handleBulkOperation("legal")}
+          <AdminOperationDialog
+            operationType="legal"
+            scrapableOutlets={scrapableOutlets}
             disabled={isScraping || !hasApiKey}
-            className="w-full gap-2"
-            variant="default"
-          >
-            {isScraping && activeOperation === "legal" ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Researching...
-              </>
-            ) : (
-              <>
-                <Scale className="h-4 w-4" />
-                Research Legal
-              </>
-            )}
-          </Button>
+            onOperationComplete={(results) => handleOperationComplete("legal", results)}
+          />
         </Card>
 
         {/* Update Accountability */}
@@ -546,24 +436,12 @@ export function AdminDashboardClient({
               <p className="text-sm text-muted-foreground">Count retractions, errata, and update scores</p>
             </div>
           </div>
-          <Button
-            onClick={() => handleBulkOperation("accountability")}
+          <AdminOperationDialog
+            operationType="accountability"
+            scrapableOutlets={scrapableOutlets}
             disabled={isScraping || !hasApiKey}
-            className="w-full gap-2"
-            variant="default"
-          >
-            {isScraping && activeOperation === "accountability" ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Counting...
-              </>
-            ) : (
-              <>
-                <FileText className="h-4 w-4" />
-                Update Accountability
-              </>
-            )}
-          </Button>
+            onOperationComplete={(results) => handleOperationComplete("accountability", results)}
+          />
         </Card>
 
         {/* Update Audience Data */}
@@ -577,24 +455,12 @@ export function AdminDashboardClient({
               <p className="text-sm text-muted-foreground">Refresh follower counts and viewership metrics</p>
             </div>
           </div>
-          <Button
-            onClick={() => handleBulkOperation("audience")}
+          <AdminOperationDialog
+            operationType="audience"
+            scrapableOutlets={scrapableOutlets}
             disabled={isScraping || !hasApiKey}
-            className="w-full gap-2"
-            variant="default"
-          >
-            {isScraping && activeOperation === "audience" ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Updating...
-              </>
-            ) : (
-              <>
-                <TrendingUp className="h-4 w-4" />
-                Update Audience
-              </>
-            )}
-          </Button>
+            onOperationComplete={(results) => handleOperationComplete("audience", results)}
+          />
         </Card>
 
         {/* Merge Duplicates */}
@@ -623,7 +489,7 @@ export function AdminDashboardClient({
         <Card className="p-6">
           <div className="mb-4 flex items-start gap-4">
             <div className="rounded-lg bg-indigo-500/10 p-3">
-              <RefreshCw className="h-6 w-6 text-indigo-600" />
+              <ImageIcon className="h-6 w-6 text-indigo-600" />
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-foreground">Update Logos</h3>
@@ -632,47 +498,14 @@ export function AdminDashboardClient({
               </p>
             </div>
           </div>
-          <Button
-            onClick={() => handleBulkOperation("logos")}
+          <AdminOperationDialog
+            operationType="logos"
+            scrapableOutlets={scrapableOutlets}
             disabled={isScraping || !hasApiKey}
-            className="w-full gap-2"
-            variant="default"
-          >
-            {isScraping && activeOperation === "logos" ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Updating...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4" />
-                Update Logos
-              </>
-            )}
-          </Button>
+            onOperationComplete={(results) => handleOperationComplete("logos", results)}
+          />
         </Card>
       </div>
-
-      {isScraping && (
-        <Card className="mb-8 p-6">
-          <div className="mb-4">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="font-medium text-foreground">
-                {activeOperation === "discover" && "Discovering new outlets..."}
-                {activeOperation === "ownership" && "Updating ownership data..."}
-                {activeOperation === "funding" && "Researching funding sources..."}
-                {activeOperation === "legal" && "Researching legal cases..."}
-                {activeOperation === "accountability" && "Counting retractions and errata..."}
-                {activeOperation === "audience" && "Updating audience metrics..."}
-                {activeOperation === "merge" && "Identifying and merging duplicates..."}
-                {activeOperation === "logos" && "Updating media outlet logos..."}
-              </span>
-              <span className="text-sm font-medium text-foreground">{progress}%</span>
-            </div>
-            <Progress value={progress} className="h-2" />
-          </div>
-        </Card>
-      )}
 
       {!hasApiKey && (
         <Card className="mb-8 p-6">
@@ -685,40 +518,6 @@ export function AdminDashboardClient({
                 scraping.
               </p>
             </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Results Table */}
-      {results.length > 0 && (
-        <Card className="p-6">
-          <h2 className="mb-4 text-xl font-bold text-foreground">Scraping Results</h2>
-          <div className="space-y-2">
-            {results.map((result, index) => {
-              const outlet = scrapableOutlets.find((o) => o.id === result.outletId)
-              return (
-                <div
-                  key={index}
-                  className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-3"
-                >
-                  <div className="flex items-center gap-3">
-                    {result.success ? (
-                      <CheckCircle className="h-5 w-5 text-green-600" />
-                    ) : (
-                      <XCircle className="h-5 w-5 text-destructive" />
-                    )}
-                    <span className="font-medium text-foreground">{outlet?.name || result.outletId}</span>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {result.success ? (
-                      result.data?.message || "Updated successfully"
-                    ) : (
-                      <span className="text-destructive">{result.error}</span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
           </div>
         </Card>
       )}

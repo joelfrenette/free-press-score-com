@@ -281,6 +281,65 @@ async function scrapeWebsiteWithScrapingBee(url: string): Promise<{ html: string
     }
 
     const html = await response.text()
+
+    const errorIndicators = [
+      "Page Not Found",
+      "Page not found",
+      "Page Unavailable",
+      "page unavailable",
+      "404",
+      "Error 404",
+      "Not Found",
+      "doesn't exist",
+      "does not exist",
+      "no longer available",
+      "page isn't available",
+      "couldn't find",
+      "could not find",
+      "<title>404",
+      "<title>Page Not Found",
+      "<title>Page Unavailable",
+      "error404",
+      "page-not-found",
+      "page-404",
+      "notfound",
+      'class="404"',
+      'id="404"',
+      "We can't find",
+      "we couldn't find",
+      "This page doesn't exist",
+      "requested page",
+      "no results found",
+      "content not found",
+      "article not found",
+      "resource not found",
+      "Sorry, we couldn't",
+      "Oops!",
+      "Something went wrong",
+    ]
+
+    const lowerHtml = html.toLowerCase()
+
+    // Check title tag specifically for error indicators
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
+    const pageTitle = titleMatch ? titleMatch[1].toLowerCase() : ""
+    const titleHasError = ["404", "not found", "unavailable", "error", "oops"].some((e) => pageTitle.includes(e))
+
+    // Check body class for error pages
+    const bodyClassMatch = html.match(/<body[^>]*class="([^"]+)"/i)
+    const bodyClass = bodyClassMatch ? bodyClassMatch[1].toLowerCase() : ""
+    const bodyHasErrorClass = ["404", "error", "not-found", "notfound"].some((e) => bodyClass.includes(e))
+
+    const hasErrorIndicator = errorIndicators.some((indicator) => lowerHtml.includes(indicator.toLowerCase()))
+
+    // If title or body class indicates error, or multiple error indicators found
+    if (titleHasError || bodyHasErrorClass || (hasErrorIndicator && html.length < 100000)) {
+      console.log(
+        `[v0] ScrapingBee returned error/404 page for ${normalizedUrl} (title: "${pageTitle}", bodyClass: "${bodyClass}")`,
+      )
+      return null
+    }
+
     console.log(`[v0] ScrapingBee scraped ${html.length} bytes from ${normalizedUrl}`)
     return { html, success: true }
   } catch (error) {

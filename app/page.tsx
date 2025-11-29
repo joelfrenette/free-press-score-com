@@ -60,11 +60,24 @@ export default function Home() {
           return (
             outlet.country === "Argentina" ||
             outlet.country === "Brazil" ||
-            outlet.country === "Central & South America"
+            outlet.country === "Central & South America" ||
+            outlet.country === "Chile" ||
+            outlet.country === "Colombia" ||
+            outlet.country === "Peru" ||
+            outlet.country === "Venezuela" ||
+            outlet.country === "Mexico"
           )
         }
         if (selectedCountry === "Middle East") {
-          return outlet.country === "Middle East" || outlet.country === "Qatar"
+          return (
+            outlet.country === "Middle East" ||
+            outlet.country === "Qatar" ||
+            outlet.country === "Israel" ||
+            outlet.country === "Saudi Arabia" ||
+            outlet.country === "UAE" ||
+            outlet.country === "Iran" ||
+            outlet.country === "Turkey"
+          )
         }
         return outlet.country === selectedCountry
       })
@@ -97,12 +110,40 @@ export default function Home() {
   const groupedByCountry = useMemo(() => {
     const grouped = COUNTRIES.reduce(
       (acc, country) => {
+        let countryOutlets = filteredOutlets
+        if (country === "Central & South America") {
+          countryOutlets = filteredOutlets.filter(
+            (o) =>
+              o.country === "Argentina" ||
+              o.country === "Brazil" ||
+              o.country === "Chile" ||
+              o.country === "Colombia" ||
+              o.country === "Peru" ||
+              o.country === "Venezuela" ||
+              o.country === "Mexico" ||
+              o.country === "Central & South America",
+          )
+        } else if (country === "Middle East") {
+          countryOutlets = filteredOutlets.filter(
+            (o) =>
+              o.country === "Middle East" ||
+              o.country === "Qatar" ||
+              o.country === "Israel" ||
+              o.country === "Saudi Arabia" ||
+              o.country === "UAE" ||
+              o.country === "Iran" ||
+              o.country === "Turkey",
+          )
+        } else {
+          countryOutlets = filteredOutlets.filter((o) => o.country === country)
+        }
+
         acc[country] = {
-          "far-left": filteredOutlets.filter((o) => o.country === country && o.biasScore <= -1.5),
-          left: filteredOutlets.filter((o) => o.country === country && o.biasScore > -1.5 && o.biasScore <= -0.5),
-          center: filteredOutlets.filter((o) => o.country === country && o.biasScore > -0.5 && o.biasScore < 0.5),
-          right: filteredOutlets.filter((o) => o.country === country && o.biasScore >= 0.5 && o.biasScore < 1.5),
-          "far-right": filteredOutlets.filter((o) => o.country === country && o.biasScore >= 1.5),
+          "far-left": countryOutlets.filter((o) => o.biasScore <= -1.5),
+          left: countryOutlets.filter((o) => o.biasScore > -1.5 && o.biasScore <= -0.5),
+          center: countryOutlets.filter((o) => o.biasScore > -0.5 && o.biasScore < 0.5),
+          right: countryOutlets.filter((o) => o.biasScore >= 0.5 && o.biasScore < 1.5),
+          "far-right": countryOutlets.filter((o) => o.biasScore >= 1.5),
         }
         return acc
       },

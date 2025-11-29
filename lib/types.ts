@@ -213,13 +213,12 @@ export const COUNTRIES = [
   "United Kingdom",
   "France",
   "Germany",
+  "Japan",
   "Russia",
-  "Middle East",
   "China",
   "India",
   "Central & South America",
-  "Mexico",
-  "Japan",
+  "Middle East",
 ] as const
 
 export type Country = (typeof COUNTRIES)[number]
