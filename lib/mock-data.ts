@@ -118,7 +118,7 @@ async function debouncedSaveToBlob() {
     console.log("[v0] Auto-saving outlets to Blob...")
     await saveOutletsViaApi()
   }, 2000) // Wait 2 seconds after last change before saving
-}
+} // Added missing closing brace for the function
 
 export async function saveOutlets(): Promise<{ success: boolean; error?: string }> {
   if (saveTimeout) {

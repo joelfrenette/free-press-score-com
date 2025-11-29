@@ -67,7 +67,12 @@ async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<
           return content
         }
       } else {
-        console.log("[v0] Groq response not ok:", response.status)
+        const status = response.status
+        console.log(`[v0] Groq failed with status ${status}, continuing to next provider...`)
+        if (status === 429) {
+          console.log("[v0] Groq rate limited - switching to next provider")
+        }
+        // Continue to next provider (don't return, let the cascade continue)
       }
     } catch (error) {
       console.log("[v0] Groq failed, trying next provider:", error)
@@ -104,7 +109,8 @@ async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<
           return content
         }
       } else {
-        console.log("[v0] Grok response not ok:", response.status)
+        const status = response.status
+        console.log(`[v0] Grok failed with status ${status}, continuing to next provider...`)
       }
     } catch (error) {
       console.log("[v0] Grok failed, trying next provider:", error)
@@ -141,7 +147,8 @@ async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<
           return content
         }
       } else {
-        console.log("[v0] OpenAI response not ok:", response.status)
+        const status = response.status
+        console.log(`[v0] OpenAI failed with status ${status}, continuing to next provider...`)
       }
     } catch (error) {
       console.log("[v0] OpenAI failed, trying next provider:", error)
@@ -176,7 +183,8 @@ async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<
           return content
         }
       } else {
-        console.log("[v0] Anthropic response not ok:", response.status)
+        const status = response.status
+        console.log(`[v0] Anthropic failed with status ${status}, continuing to next provider...`)
       }
     } catch (error) {
       console.log("[v0] Anthropic failed, trying next provider:", error)
@@ -213,7 +221,8 @@ async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<
           return content
         }
       } else {
-        console.log("[v0] Perplexity response not ok:", response.status)
+        const status = response.status
+        console.log(`[v0] Perplexity failed with status ${status}, continuing to next provider...`)
       }
     } catch (error) {
       console.log("[v0] Perplexity failed, trying next provider:", error)
@@ -251,7 +260,8 @@ async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<
           return content
         }
       } else {
-        console.log("[v0] OpenRouter response not ok:", response.status)
+        const status = response.status
+        console.log(`[v0] OpenRouter failed with status ${status}`)
       }
     } catch (error) {
       console.log("[v0] OpenRouter failed")
