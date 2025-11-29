@@ -28,6 +28,7 @@ import {
   FileText,
   TrendingUp,
   ImageIcon,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react"
 
@@ -175,6 +176,7 @@ interface AdminOperationDialogProps {
     platform?: string
     outletType: string
     country?: string
+    mediaType?: string
   }>
   disabled: boolean
   onOperationComplete: (results: OperationResults) => void
@@ -193,7 +195,6 @@ export function AdminOperationDialog({
   const [view, setView] = useState<"filters" | "processing" | "results">("filters")
 
   // Filter state
-  const [batchSize, setBatchSize] = useState(config.defaultBatchSize)
   const [outletTypes, setOutletTypes] = useState<string[]>([])
   const [countryFilter, setCountryFilter] = useState("all")
   const [skipRecent, setSkipRecent] = useState(false)
@@ -203,6 +204,8 @@ export function AdminOperationDialog({
   const [progress, setProgress] = useState(0)
   const [currentOutlet, setCurrentOutlet] = useState("")
   const [processedCount, setProcessedCount] = useState(0)
+  const [liveSuccess, setLiveSuccess] = useState(0)
+  const [liveFailed, setLiveFailed] = useState(0)
 
   // Results state
   const [results, setResults] = useState<OperationResults | null>(null)
@@ -213,7 +216,18 @@ export function AdminOperationDialog({
 
     if (outletTypes.length > 0) {
       filtered = filtered.filter((o) =>
-        outletTypes.some((type) => o.outletType?.toLowerCase().includes(type.toLowerCase())),
+        outletTypes.some((type) => {
+          const mediaType = o.mediaType?.toLowerCase() || ""
+          if (type === "tv") return mediaType === "tv" || mediaType === "television"
+          if (type === "print") return mediaType === "print" || mediaType === "newspaper"
+          if (type === "radio") return mediaType === "radio"
+          if (type === "podcast") return mediaType === "podcast"
+          if (type === "social")
+            return mediaType === "social" || mediaType === "youtube" || o.outletType === "influencer"
+          if (type === "legacy") return mediaType === "legacy" || mediaType === "wire"
+          if (type === "digital") return mediaType === "digital" || mediaType === "online"
+          return mediaType.includes(type.toLowerCase())
+        }),
       )
     }
 
@@ -230,8 +244,8 @@ export function AdminOperationDialog({
       })
     }
 
-    return filtered.slice(0, batchSize)
-  }, [scrapableOutlets, outletTypes, countryFilter, batchSize])
+    return filtered
+  }, [scrapableOutlets, outletTypes, countryFilter])
 
   const filteredCount = getFilteredOutlets().length
 
@@ -244,6 +258,8 @@ export function AdminOperationDialog({
     setProgress(0)
     setProcessedCount(0)
     setCurrentOutlet("")
+    setLiveSuccess(0)
+    setLiveFailed(0)
 
     const outletsToProcess = getFilteredOutlets()
     const totalOutlets = outletsToProcess.length
@@ -264,7 +280,7 @@ export function AdminOperationDialog({
           outlets: outletsToProcess,
           operationType,
           filters: {
-            batchSize,
+            batchSize: totalOutlets,
             outletTypes,
             countryFilter,
             skipRecent,
@@ -289,7 +305,7 @@ export function AdminOperationDialog({
         totalSuccess: data.results?.filter((r: any) => r.success).length || 0,
         totalFailed: data.results?.filter((r: any) => !r.success).length || 0,
         timestamp: new Date(),
-        filters: { batchSize, outletTypes, countryFilter, skipRecent, recentDays },
+        filters: { batchSize: totalOutlets, outletTypes, countryFilter, skipRecent, recentDays },
       }
 
       setResults(operationResults)
@@ -311,7 +327,7 @@ export function AdminOperationDialog({
         totalSuccess: 0,
         totalFailed: 1,
         timestamp: new Date(),
-        filters: { batchSize, outletTypes, countryFilter, skipRecent, recentDays },
+        filters: { batchSize: filteredCount, outletTypes, countryFilter, skipRecent, recentDays },
       }
       setResults(errorResults)
       setProgress(100)
@@ -323,16 +339,35 @@ export function AdminOperationDialog({
     setResults(null)
     setView("filters")
     setProgress(0)
+    setLiveSuccess(0)
+    setLiveFailed(0)
   }
 
-  const handleClose = () => {
-    if (view === "processing") return // Prevent closing during processing
-    setOpen(false)
-    setTimeout(() => {
+  const handleOpenChange = (newOpen: boolean) => {
+    if (view === "processing" && !newOpen) return // Prevent closing during processing
+    if (newOpen) {
+      // Opening the dialog - reset state
+      setOpen(true)
       setView("filters")
       setResults(null)
       setProgress(0)
-    }, 200)
+      setLiveSuccess(0)
+      setLiveFailed(0)
+    } else {
+      // Closing the dialog
+      setOpen(false)
+      setTimeout(() => {
+        setView("filters")
+        setResults(null)
+        setProgress(0)
+        setLiveSuccess(0)
+        setLiveFailed(0)
+      }, 200)
+    }
+  }
+
+  const handleClose = () => {
+    handleOpenChange(false)
   }
 
   // Filter view
@@ -349,27 +384,6 @@ export function AdminOperationDialog({
       </DialogHeader>
 
       <div className="grid gap-6 py-4">
-        {/* Batch Size */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium">Number of Outlets</Label>
-            <span className="text-sm font-bold text-primary">{batchSize} outlets</span>
-          </div>
-          <Slider
-            value={[batchSize]}
-            onValueChange={([val]) => setBatchSize(val)}
-            min={5}
-            max={config.maxBatchSize}
-            step={5}
-            className="w-full"
-          />
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>5</span>
-            <span>{Math.floor(config.maxBatchSize / 2)}</span>
-            <span>{config.maxBatchSize}</span>
-          </div>
-        </div>
-
         {/* Outlet Types Filter */}
         <div className="space-y-3">
           <Label className="text-sm font-medium">Filter by Outlet Type (optional)</Label>
@@ -419,11 +433,11 @@ export function AdminOperationDialog({
         <div className="space-y-3">
           <div className="flex items-center gap-3">
             <Checkbox
-              id="skip-recent"
+              id={`skip-recent-${operationType}`}
               checked={skipRecent}
               onCheckedChange={(checked) => setSkipRecent(checked as boolean)}
             />
-            <Label htmlFor="skip-recent" className="text-sm font-medium cursor-pointer">
+            <Label htmlFor={`skip-recent-${operationType}`} className="text-sm font-medium cursor-pointer">
               Skip recently updated outlets
             </Label>
           </div>
@@ -512,14 +526,18 @@ export function AdminOperationDialog({
             <div className="text-xs text-muted-foreground">Total</div>
           </div>
           <div className="rounded-lg border bg-green-500/10 p-3 text-center">
-            <div className="text-xl font-bold text-green-600">-</div>
+            <div className="text-xl font-bold text-green-600">{liveSuccess || "-"}</div>
             <div className="text-xs text-muted-foreground">Success</div>
           </div>
           <div className="rounded-lg border bg-red-500/10 p-3 text-center">
-            <div className="text-xl font-bold text-red-600">-</div>
+            <div className="text-xl font-bold text-red-600">{liveFailed || "-"}</div>
             <div className="text-xs text-muted-foreground">Failed</div>
           </div>
         </div>
+      </div>
+
+      <div className="text-center text-xs text-muted-foreground pb-2">
+        Please wait while processing completes. Do not close this window.
       </div>
     </>
   )
@@ -528,15 +546,26 @@ export function AdminOperationDialog({
   const renderResultsView = () => {
     if (!results) return null
 
+    const hasErrors = results.totalFailed > 0
+    const allFailed = results.totalSuccess === 0 && results.totalFailed > 0
+
     return (
       <>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            <CheckCircle2 className="h-5 w-5 text-green-500" />
-            {config.title} Complete
+            {allFailed ? (
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+            ) : hasErrors ? (
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+            ) : (
+              <CheckCircle2 className="h-5 w-5 text-green-500" />
+            )}
+            {config.title} {allFailed ? "Failed" : "Complete"}
           </DialogTitle>
           <DialogDescription>
-            Processed {results.totalProcessed} outlets with {results.totalSuccess} successful updates.
+            {allFailed
+              ? `Failed to process ${results.totalFailed} outlets. Please check the errors below.`
+              : `Processed ${results.totalProcessed} outlets with ${results.totalSuccess} successful updates.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -586,13 +615,13 @@ export function AdminOperationDialog({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {result.success ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
                     ) : (
-                      <XCircle className="h-4 w-4 text-red-500" />
+                      <XCircle className="h-4 w-4 text-red-500 shrink-0" />
                     )}
                     <span className="font-medium">{result.outletName}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-muted-foreground text-right max-w-[200px] truncate">
                     {result.success ? result.data?.message || "Updated successfully" : result.error || "Update failed"}
                   </span>
                 </div>
@@ -603,11 +632,11 @@ export function AdminOperationDialog({
 
         <DialogFooter className="gap-2 sm:gap-0 mt-4">
           <Button variant="outline" onClick={handleClose}>
-            Close
+            {hasErrors ? "Quit" : "Close"}
           </Button>
-          <Button onClick={handleTryAgain} className="gap-2">
+          <Button onClick={handleTryAgain} className="gap-2" variant={hasErrors ? "default" : "secondary"}>
             <RefreshCw className="h-4 w-4" />
-            Run Again
+            {hasErrors ? "Try Again" : "Run Again"}
           </Button>
         </DialogFooter>
       </>
@@ -615,9 +644,9 @@ export function AdminOperationDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button disabled={disabled} className="w-full gap-2" variant="default" onClick={() => setOpen(true)}>
+        <Button disabled={disabled} className="w-full gap-2" variant="default">
           <Icon className="h-4 w-4" />
           {config.title}
         </Button>

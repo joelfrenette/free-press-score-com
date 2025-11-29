@@ -47,6 +47,8 @@ interface AdminDashboardClientProps {
     name: string
     platform?: string
     outletType: string
+    country?: string
+    mediaType?: string
   }>
 }
 
