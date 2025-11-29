@@ -36,7 +36,7 @@ function normalizeUrl(url: string): string {
   return normalized
 }
 
-async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<string | null> {
+export async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<string | null> {
   // 1. Try Groq FIRST (fastest - Llama on custom hardware, sub-second responses)
   const groqKey = process.env.GROQ_API_KEY
   if (groqKey && groqKey.length > 20) {
@@ -411,7 +411,7 @@ function extractDataFromHTML(html: string, dataType: string): Record<string, any
   return Object.keys(data).length > 0 ? data : null
 }
 
-async function searchWithSERP(query: string): Promise<any[] | null> {
+export async function searchWithSERP(query: string): Promise<any[] | null> {
   const serpKey = process.env.SERP_API_KEY
   if (!serpKey) {
     console.log("[v0] SERP API key not configured")
@@ -441,7 +441,7 @@ async function searchWithSERP(query: string): Promise<any[] | null> {
 }
 
 // Parse JSON from AI response
-function parseJSONFromResponse(text: string): any {
+export function parseJSONFromResponse(text: string): any {
   try {
     // Try direct parse first
     return JSON.parse(text)

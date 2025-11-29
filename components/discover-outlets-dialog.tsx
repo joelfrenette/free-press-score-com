@@ -17,21 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  Search,
-  RefreshCw,
-  Tv,
-  Radio,
-  Newspaper,
-  Mic,
-  Users,
-  Building2,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  ExternalLink,
-  Copy,
-} from "lucide-react"
+import { Search, RefreshCw, CheckCircle2, XCircle, AlertCircle, ExternalLink, Copy } from "lucide-react"
 
 export interface DiscoveryFilters {
   country: string
@@ -91,14 +77,18 @@ const COUNTRIES = [
   { value: "europe", label: "Europe (Other)" },
 ]
 
-const MEDIA_TYPES = [
-  { id: "tv", label: "Television", icon: Tv },
-  { id: "print", label: "Print / Newspaper", icon: Newspaper },
-  { id: "radio", label: "Radio", icon: Radio },
-  { id: "podcast", label: "Podcast", icon: Mic },
-  { id: "social", label: "Social Media / Influencer", icon: Users },
-  { id: "legacy", label: "Legacy / Wire Service", icon: Building2 },
+const LEGACY_MEDIA_TYPES = [
+  { id: "tv", label: "Television" },
+  { id: "print", label: "Print / Newspaper" },
+  { id: "mixed", label: "Multi-Platform" },
 ]
+
+const NEW_MEDIA_TYPES = [
+  { id: "digital", label: "Digital Native" },
+  { id: "podcast", label: "Podcast" },
+]
+
+const ALL_MEDIA_TYPES = [...LEGACY_MEDIA_TYPES, ...NEW_MEDIA_TYPES]
 
 function formatAudience(num: number): string {
   if (num >= 1000000000) return `${(num / 1000000000).toFixed(1)}B`
@@ -108,7 +98,7 @@ function formatAudience(num: number): string {
 }
 
 function getMediaTypeLabel(id: string): string {
-  return MEDIA_TYPES.find((t) => t.id === id)?.label || id
+  return ALL_MEDIA_TYPES.find((t) => t.id === id)?.label || id
 }
 
 function getCountryLabel(value: string): string {
@@ -130,7 +120,7 @@ function getMatchTypeLabel(matchType?: string): string {
 export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: DiscoverOutletsDialogProps) {
   const [open, setOpen] = useState(false)
   const [country, setCountry] = useState("all")
-  const [mediaTypes, setMediaTypes] = useState<string[]>(["tv", "print", "social"])
+  const [mediaTypes, setMediaTypes] = useState<string[]>([])
   const [minAudience, setMinAudience] = useState(1000000)
   const [outletsToFind, setOutletsToFind] = useState(12)
 
@@ -354,7 +344,7 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
         {/* Country/Region Selection */}
         <div className="space-y-2">
           <Label htmlFor="country" className="text-sm font-medium">
-            Country / Region
+            Filter by Country (optional)
           </Label>
           <Select value={country} onValueChange={setCountry}>
             <SelectTrigger id="country" className="w-full">
@@ -372,29 +362,64 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
 
         {/* Media Types */}
         <div className="space-y-3">
-          <Label className="text-sm font-medium">Media Types</Label>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {MEDIA_TYPES.map((type) => {
-              const Icon = type.icon
-              const isSelected = mediaTypes.includes(type.id)
-              return (
-                <button
-                  key={type.id}
-                  type="button"
-                  onClick={() => handleMediaTypeToggle(type.id)}
-                  className={`flex items-center gap-2 rounded-lg border p-3 text-left transition-all ${
-                    isSelected
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:bg-muted"
-                  }`}
-                >
-                  <Checkbox checked={isSelected} className="pointer-events-none" />
-                  <Icon className="h-4 w-4" />
-                  <span className="text-sm font-medium">{type.label}</span>
-                </button>
-              )
-            })}
+          <Label className="text-sm font-medium">Filter by Outlet Type (optional)</Label>
+
+          {/* Legacy Media Group */}
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Legacy Media</span>
+            <div className="flex flex-wrap gap-2">
+              {LEGACY_MEDIA_TYPES.map((type) => {
+                const isSelected = mediaTypes.includes(type.id)
+                return (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() => handleMediaTypeToggle(type.id)}
+                    className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-all ${
+                      isSelected
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:bg-muted"
+                    }`}
+                  >
+                    <Checkbox checked={isSelected} className="pointer-events-none h-4 w-4" />
+                    <span>{type.label}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
+
+          {/* New Media Group */}
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">New Media</span>
+            <div className="flex flex-wrap gap-2">
+              {NEW_MEDIA_TYPES.map((type) => {
+                const isSelected = mediaTypes.includes(type.id)
+                return (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() => handleMediaTypeToggle(type.id)}
+                    className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-all ${
+                      isSelected
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:bg-muted"
+                    }`}
+                  >
+                    <Checkbox checked={isSelected} className="pointer-events-none h-4 w-4" />
+                    <span>{type.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Helper text */}
+          <p className="text-xs text-muted-foreground">
+            {mediaTypes.length === 0
+              ? "No filter applied - all outlet types included"
+              : `${mediaTypes.length} type${mediaTypes.length > 1 ? "s" : ""} selected`}
+          </p>
         </div>
 
         {/* Minimum Audience */}
@@ -446,7 +471,7 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
         <Button variant="outline" onClick={() => setOpen(false)}>
           Cancel
         </Button>
-        <Button onClick={handleDiscover} disabled={mediaTypes.length === 0} className="gap-2">
+        <Button onClick={handleDiscover} className="gap-2">
           <Search className="h-4 w-4" />
           Start Discovery
         </Button>

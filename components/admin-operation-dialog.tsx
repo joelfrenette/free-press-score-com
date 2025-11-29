@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import {
   Dialog,
   DialogContent,
@@ -224,6 +224,9 @@ export function AdminOperationDialog({
 
   // Results state
   const [results, setResults] = useState<OperationResults | null>(null)
+  const [wasCancelled, setWasCancelled] = useState(false)
+
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const mediaTypes = scrapableOutlets.map((o) => o.mediaType)
@@ -283,9 +286,21 @@ export function AdminOperationDialog({
     setCurrentOutlet("")
     setLiveSuccess(0)
     setLiveFailed(0)
+    setWasCancelled(false)
+
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
 
     const outletsToProcess = getFilteredOutlets()
     const totalOutlets = outletsToProcess.length
+
+    const allResults: Array<{
+      outletId: string
+      outletName: string
+      success: boolean
+      data?: any
+      error?: string
+    }> = []
 
     try {
       const response = await fetch(config.endpoint, {
@@ -295,31 +310,28 @@ export function AdminOperationDialog({
           outlets: outletsToProcess,
           operationType,
           filters,
-          stream: true, // Request streaming response
+          stream: true,
         }),
+        signal: abortController.signal,
       })
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      // Check if we got a streaming response
       const contentType = response.headers.get("content-type")
       if (contentType?.includes("text/event-stream")) {
-        // Handle streaming response
         const reader = response.body?.getReader()
         const decoder = new TextDecoder()
-        const allResults: Array<{
-          outletId: string
-          outletName: string
-          success: boolean
-          data?: any
-          error?: string
-        }> = []
 
         if (reader) {
           let buffer = ""
           while (true) {
+            if (abortController.signal.aborted) {
+              reader.cancel()
+              break
+            }
+
             const { done, value } = await reader.read()
             if (done) break
 
@@ -333,7 +345,6 @@ export function AdminOperationDialog({
                   const data = JSON.parse(line.slice(6))
 
                   if (data.type === "progress") {
-                    // Update live progress
                     setProcessedCount(data.current)
                     setProgress((data.current / totalOutlets) * 100)
                     setCurrentOutlet(data.outletName)
@@ -344,16 +355,14 @@ export function AdminOperationDialog({
                       setLiveFailed((prev) => prev + 1)
                     }
 
-                    // Store result
                     allResults.push({
-                      outletId: data.result.outletId,
+                      outletId: data.result?.outletId || data.outletId,
                       outletName: data.outletName,
-                      success: data.result.success,
-                      data: data.result.data,
-                      error: data.result.error,
+                      success: data.result?.success ?? data.success,
+                      data: data.result?.data,
+                      error: data.result?.error,
                     })
                   } else if (data.type === "complete") {
-                    // Final completion
                     const operationResults: OperationResults = {
                       results: allResults,
                       totalProcessed: data.totalProcessed,
@@ -377,22 +386,22 @@ export function AdminOperationDialog({
           }
         }
 
-        // If we exit the loop without completion, show results anyway
-        const operationResults: OperationResults = {
-          results: allResults,
-          totalProcessed: allResults.length,
-          totalSuccess: allResults.filter((r) => r.success).length,
-          totalFailed: allResults.filter((r) => !r.success).length,
-          timestamp: new Date(),
-          filters,
-        }
+        if (!abortController.signal.aborted) {
+          const operationResults: OperationResults = {
+            results: allResults,
+            totalProcessed: allResults.length,
+            totalSuccess: allResults.filter((r) => r.success).length,
+            totalFailed: allResults.filter((r) => !r.success).length,
+            timestamp: new Date(),
+            filters,
+          }
 
-        setResults(operationResults)
-        setProgress(100)
-        setView("results")
-        onOperationComplete(operationResults)
+          setResults(operationResults)
+          setProgress(100)
+          setView("results")
+          onOperationComplete(operationResults)
+        }
       } else {
-        // Handle non-streaming JSON response (fallback)
         const data = await response.json()
 
         const operationResults: OperationResults = {
@@ -416,6 +425,24 @@ export function AdminOperationDialog({
         onOperationComplete(operationResults)
       }
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        const cancelledResults: OperationResults = {
+          results: allResults,
+          totalProcessed: allResults.length,
+          totalSuccess: allResults.filter((r) => r.success).length,
+          totalFailed: allResults.filter((r) => !r.success).length,
+          timestamp: new Date(),
+          filters,
+        }
+        setResults(cancelledResults)
+        setWasCancelled(true)
+        setView("results")
+        if (allResults.length > 0) {
+          onOperationComplete(cancelledResults)
+        }
+        return
+      }
+
       console.error(`[v0] ${operationType} operation error:`, error)
       const errorResults: OperationResults = {
         results: [
@@ -439,26 +466,35 @@ export function AdminOperationDialog({
     }
   }
 
+  const handleCancelOperation = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+  }
+
   const handleTryAgain = () => {
     setResults(null)
     setView("filters")
     setProgress(0)
     setLiveSuccess(0)
     setLiveFailed(0)
+    setWasCancelled(false)
   }
 
   const handleOpenChange = (newOpen: boolean) => {
-    if (view === "processing" && !newOpen) return // Prevent closing during processing
+    if (view === "processing" && !newOpen) {
+      handleCancelOperation()
+    }
     if (newOpen) {
-      // Opening the dialog - reset state
       setOpen(true)
       setView("filters")
       setResults(null)
       setProgress(0)
       setLiveSuccess(0)
       setLiveFailed(0)
+      setWasCancelled(false)
     } else {
-      // Closing the dialog
       setOpen(false)
       setTimeout(() => {
         setView("filters")
@@ -466,6 +502,7 @@ export function AdminOperationDialog({
         setProgress(0)
         setLiveSuccess(0)
         setLiveFailed(0)
+        setWasCancelled(false)
       }, 200)
     }
   }
@@ -474,7 +511,6 @@ export function AdminOperationDialog({
     handleOpenChange(false)
   }
 
-  // Filter view
   const renderFiltersView = () => (
     <>
       <DialogHeader>
@@ -488,7 +524,6 @@ export function AdminOperationDialog({
       </DialogHeader>
 
       <div className="grid gap-6 py-4">
-        {/* Filter by Outlet Type */}
         <div className="space-y-3">
           <Label className="text-sm font-medium">Filter by Outlet Type (optional)</Label>
           <div className="space-y-4">
@@ -529,7 +564,6 @@ export function AdminOperationDialog({
           )}
         </div>
 
-        {/* Country Filter */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">Filter by Country (optional)</Label>
           <Select
@@ -549,7 +583,6 @@ export function AdminOperationDialog({
           </Select>
         </div>
 
-        {/* Skip Recently Updated */}
         <div className="space-y-3">
           <div className="flex items-center gap-3">
             <Checkbox
@@ -579,7 +612,6 @@ export function AdminOperationDialog({
           )}
         </div>
 
-        {/* Summary */}
         <div className="rounded-lg border bg-muted/30 p-3">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Outlets matching filters:</span>
@@ -602,97 +634,103 @@ export function AdminOperationDialog({
     </>
   )
 
-  // Processing view
   const renderProcessingView = () => (
     <>
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2 text-xl">
-          <RefreshCw className="h-5 w-5 animate-spin" />
+          <RefreshCw className="h-5 w-5 animate-spin text-primary" />
           {config.processingText}...
         </DialogTitle>
-        <DialogDescription>Processing {filteredCount} outlets. This may take a few minutes.</DialogDescription>
+        <DialogDescription>
+          Processing {getFilteredOutlets().length} outlets. This may take a few minutes.
+        </DialogDescription>
       </DialogHeader>
 
-      <div className="py-8 space-y-6">
-        {/* Progress Bar */}
+      <div className="space-y-6 py-4">
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Progress</span>
-            <span className="font-medium">{Math.round(progress)}%</span>
+            <span>Progress</span>
+            <span>{Math.round(progress)}%</span>
           </div>
-          <Progress value={progress} className="h-3" />
+          <Progress value={progress} className="h-2" />
         </div>
 
-        {/* Animated Status */}
         <div className="flex flex-col items-center justify-center py-6">
           <div className="relative mb-4">
-            <div className={`w-20 h-20 rounded-full ${config.bgColor} flex items-center justify-center`}>
-              <Icon className={`h-10 w-10 ${config.iconColor}`} />
+            <div className={`rounded-full ${config.bgColor} p-4`}>
+              <Icon className={`h-8 w-8 ${config.iconColor}`} />
             </div>
             <div className="absolute -top-1 -right-1">
-              <RefreshCw className="h-6 w-6 animate-spin text-primary" />
+              <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
             </div>
           </div>
-          <p className="text-sm text-muted-foreground text-center">
-            {config.processingText} for {filteredCount} outlets...
+          <p className="text-sm text-muted-foreground">
+            {config.processingText} for {getFilteredOutlets().length} outlets...
           </p>
-          {currentOutlet && <p className="text-xs text-muted-foreground mt-2">Currently processing: {currentOutlet}</p>}
+          {currentOutlet && <p className="text-xs text-muted-foreground mt-1">Currently processing: {currentOutlet}</p>}
         </div>
 
-        {/* Stats Preview */}
         <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-lg border bg-muted/50 p-3 text-center">
-            <div className="text-xl font-bold text-muted-foreground">{filteredCount}</div>
+          <div className="rounded-lg border bg-muted/30 p-3 text-center">
+            <div className="text-2xl font-bold">{getFilteredOutlets().length}</div>
             <div className="text-xs text-muted-foreground">Total</div>
           </div>
           <div className="rounded-lg border bg-green-500/10 p-3 text-center">
-            <div className="text-xl font-bold text-green-600">{liveSuccess || "-"}</div>
+            <div className="text-2xl font-bold text-green-600">{liveSuccess || "-"}</div>
             <div className="text-xs text-muted-foreground">Success</div>
           </div>
           <div className="rounded-lg border bg-red-500/10 p-3 text-center">
-            <div className="text-xl font-bold text-red-600">{liveFailed || "-"}</div>
+            <div className="text-2xl font-bold text-red-600">{liveFailed || "-"}</div>
             <div className="text-xs text-muted-foreground">Failed</div>
           </div>
         </div>
-      </div>
 
-      <div className="text-center text-xs text-muted-foreground pb-2">
-        Please wait while processing completes. Do not close this window.
+        <p className="text-xs text-center text-muted-foreground">Click the X button to cancel the operation.</p>
       </div>
     </>
   )
 
-  // Results view
   const renderResultsView = () => {
     if (!results) return null
 
-    const hasErrors = results.totalFailed > 0
-    const allFailed = results.totalSuccess === 0 && results.totalFailed > 0
+    const successRate = results.totalProcessed > 0 ? (results.totalSuccess / results.totalProcessed) * 100 : 0
 
     return (
       <>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            {allFailed ? (
-              <AlertTriangle className="h-5 w-5 text-red-500" />
-            ) : hasErrors ? (
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
+            {wasCancelled ? (
+              <>
+                <AlertTriangle className="h-6 w-6 text-amber-500" />
+                Operation Cancelled
+              </>
+            ) : successRate >= 80 ? (
+              <>
+                <CheckCircle2 className="h-6 w-6 text-green-500" />
+                Operation Complete
+              </>
+            ) : successRate >= 50 ? (
+              <>
+                <AlertTriangle className="h-6 w-6 text-amber-500" />
+                Operation Complete with Issues
+              </>
             ) : (
-              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              <>
+                <XCircle className="h-6 w-6 text-red-500" />
+                Operation Failed
+              </>
             )}
-            {config.title} {allFailed ? "Failed" : "Complete"}
           </DialogTitle>
           <DialogDescription>
-            {allFailed
-              ? `Failed to process ${results.totalFailed} outlets. Please check the errors below.`
-              : `Processed ${results.totalProcessed} outlets with ${results.totalSuccess} successful updates.`}
+            {wasCancelled
+              ? `Operation was cancelled. ${results.totalProcessed} outlets were processed before cancellation.`
+              : `Processed ${results.totalProcessed} outlets. ${results.totalSuccess} succeeded, ${results.totalFailed} failed.`}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Summary Stats */}
         <div className="grid grid-cols-3 gap-3 py-4">
-          <div className="rounded-lg border bg-muted/50 p-3 text-center">
-            <div className="text-2xl font-bold text-foreground">{results.totalProcessed}</div>
+          <div className="rounded-lg border bg-muted/30 p-3 text-center">
+            <div className="text-2xl font-bold">{results.totalProcessed}</div>
             <div className="text-xs text-muted-foreground">Processed</div>
           </div>
           <div className="rounded-lg border bg-green-500/10 p-3 text-center">
@@ -705,7 +743,6 @@ export function AdminOperationDialog({
           </div>
         </div>
 
-        {/* Filters Used */}
         <div className="rounded-lg border bg-muted/30 p-3 mb-4">
           <div className="text-sm font-medium mb-2">Filters Applied:</div>
           <div className="flex flex-wrap gap-2">
@@ -722,7 +759,6 @@ export function AdminOperationDialog({
           </div>
         </div>
 
-        {/* Results List */}
         <ScrollArea className="h-[250px] rounded-lg border">
           <div className="p-4 space-y-2">
             {results.results.map((result, index) => (
@@ -752,11 +788,15 @@ export function AdminOperationDialog({
 
         <DialogFooter className="gap-2 sm:gap-0 mt-4">
           <Button variant="outline" onClick={handleClose}>
-            {hasErrors ? "Quit" : "Close"}
+            {results.totalFailed > 0 ? "Quit" : "Close"}
           </Button>
-          <Button onClick={handleTryAgain} className="gap-2" variant={hasErrors ? "default" : "secondary"}>
+          <Button
+            onClick={handleTryAgain}
+            className="gap-2"
+            variant={results.totalFailed > 0 ? "default" : "secondary"}
+          >
             <RefreshCw className="h-4 w-4" />
-            {hasErrors ? "Try Again" : "Run Again"}
+            {results.totalFailed > 0 ? "Try Again" : "Run Again"}
           </Button>
         </DialogFooter>
       </>
