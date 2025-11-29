@@ -68,14 +68,15 @@ export async function callAIWithCascade(prompt: string, systemPrompt: string): P
         }
       } else {
         const status = response.status
-        console.log(`[v0] Groq failed with status ${status}, continuing to next provider...`)
         if (status === 429) {
           console.log("[v0] Groq rate limited - switching to next provider")
+        } else {
+          console.log(`[v0] Groq failed with status ${status}, trying next provider...`)
         }
         // Continue to next provider (don't return, let the cascade continue)
       }
     } catch (error) {
-      console.log("[v0] Groq failed, trying next provider:", error)
+      console.log("[v0] Groq network error, trying next provider")
     }
   }
 
@@ -110,10 +111,14 @@ export async function callAIWithCascade(prompt: string, systemPrompt: string): P
         }
       } else {
         const status = response.status
-        console.log(`[v0] Grok failed with status ${status}, continuing to next provider...`)
+        if (status === 429) {
+          console.log("[v0] Grok rate limited or out of credits - switching to next provider")
+        } else {
+          console.log(`[v0] Grok failed with status ${status}, trying next provider...`)
+        }
       }
     } catch (error) {
-      console.log("[v0] Grok failed, trying next provider:", error)
+      console.log("[v0] Grok network error, trying next provider")
     }
   }
 
@@ -436,6 +441,61 @@ export async function searchWithSERP(query: string): Promise<any[] | null> {
     return null
   } catch (error) {
     console.log("[v0] SERP API error:", error)
+    return null
+  }
+}
+
+export async function searchImagesWithSERP(
+  query: string,
+  options?: {
+    num?: number
+    imgsz?: string // 'l' for large, 'm' for medium, 'i' for icon
+    imgtype?: string // 'face', 'photo', 'clipart', 'lineart', 'animated'
+  },
+): Promise<any[] | null> {
+  const serpKey = process.env.SERP_API_KEY
+  if (!serpKey) {
+    console.log("[v0] SERP API key not configured for image search")
+    return null
+  }
+
+  try {
+    console.log(`[v0] Searching SERP Images for: ${query}`)
+    const params = new URLSearchParams({
+      engine: "google_images",
+      q: query,
+      api_key: serpKey,
+      ijn: "0", // First page
+    })
+
+    if (options?.imgsz) params.append("imgsz", options.imgsz)
+    if (options?.imgtype) params.append("image_type", options.imgtype)
+
+    const searchUrl = `https://serpapi.com/search.json?${params.toString()}`
+    const response = await fetch(searchUrl)
+
+    if (!response.ok) {
+      console.log(`[v0] SERP Images API returned ${response.status}`)
+      return null
+    }
+
+    const data = await response.json()
+    if (data.images_results && data.images_results.length > 0) {
+      console.log(`[v0] SERP Images returned ${data.images_results.length} results`)
+      // Return the top results with original image URLs
+      return data.images_results.slice(0, options?.num || 5).map((img: any) => ({
+        title: img.title,
+        original: img.original,
+        thumbnail: img.thumbnail,
+        source: img.source,
+        link: img.link,
+        width: img.original_width,
+        height: img.original_height,
+      }))
+    }
+    return null
+  } catch (error) {
+    console.log("[v0] SERP Images API error:", error)
     return null
   }
 }
@@ -1384,8 +1444,47 @@ export async function updateOutletLogos(
       let logoUrl: string | null = null
       let source = "placeholder"
 
-      // Try Clearbit Logo API (free, high quality)
-      if (outlet.website) {
+      const serpKey = process.env.SERP_API_KEY
+      if (serpKey) {
+        try {
+          const imageResults = await searchImagesWithSERP(`${outlet.name} official logo transparent png`, {
+            num: 3,
+            imgsz: "m",
+          })
+
+          if (imageResults && imageResults.length > 0) {
+            // Find the best logo image (prefer ones with "logo" in title/source)
+            const logoImage =
+              imageResults.find(
+                (img: any) => img.title?.toLowerCase().includes("logo") || img.source?.toLowerCase().includes("logo"),
+              ) || imageResults[0]
+
+            if (logoImage?.original) {
+              // Verify the image URL is accessible
+              const controller = new AbortController()
+              const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+              const imgResponse = await fetch(logoImage.original, {
+                method: "HEAD",
+                signal: controller.signal,
+              }).catch(() => null)
+
+              clearTimeout(timeoutId)
+
+              if (imgResponse && imgResponse.ok) {
+                logoUrl = logoImage.original
+                source = "serp-images"
+                console.log(`[v0] Found logo via SERP Images for ${outlet.name}`)
+              }
+            }
+          }
+        } catch (error) {
+          console.log(`[v0] SERP Images search failed for ${outlet.name}:`, error)
+        }
+      }
+
+      // Try Clearbit Logo API (free, high quality) as fallback
+      if (!logoUrl && outlet.website) {
         try {
           const domain = new URL(outlet.website).hostname.replace("www.", "")
           const clearbitUrl = `https://logo.clearbit.com/${domain}`
@@ -1414,6 +1513,19 @@ export async function updateOutletLogos(
           const domain = new URL(outlet.website).hostname
           logoUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
           source = "google-favicon"
+        } catch {
+          // Continue
+        }
+      }
+
+      // Try SERP Images API as a last resort
+      if (!logoUrl && outlet.website) {
+        try {
+          const images = await searchImagesWithSERP(`${outlet.name} logo`, { imgsz: "i", num: 1 }) // Search for icon size
+          if (images && images.length > 0 && images[0].original) {
+            logoUrl = images[0].original
+            source = "serp-images"
+          }
         } catch {
           // Continue
         }
