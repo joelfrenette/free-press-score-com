@@ -66,61 +66,48 @@ export async function POST(request: Request) {
           const outlet = outletsToProcess[i]
 
           try {
-            // Send progress event
-            sendEvent({
-              type: "progress",
-              current: i + 1,
-              total: outletsToProcess.length,
-              outlet: outlet.name,
-              message: `Searching logo for ${outlet.name}...`,
-            })
+            // Now we only send ONE progress event per outlet with the final result
 
             let newLogoUrl: string | null = null
             let source = "none"
 
             // Try SERP Images API first
-            const serpApiKey = process.env.SERP_API_KEY
-            if (serpApiKey) {
+            if (process.env.SERP_API_KEY) {
               try {
-                console.log(`[v0] Searching SERP Images for: ${outlet.name} official logo png`)
-                const images = await searchImagesWithSERP(`${outlet.name} official logo png`, {
-                  num: 10,
-                  imgSize: "medium",
-                  imgType: "clipart",
-                })
-                console.log(`[v0] SERP Images returned ${images.length} results`)
+                const images = await searchImagesWithSERP(`${outlet.name} official logo transparent png`, { num: 10 })
 
-                // Filter for logo-related images and prefer thumbnails
-                const logoImages = images.filter((img) => {
-                  const titleLower = (img.title || "").toLowerCase()
-                  const sourceLower = (img.source || "").toLowerCase()
-                  const linkLower = (img.link || "").toLowerCase()
-                  return titleLower.includes("logo") || sourceLower.includes("logo") || linkLower.includes("logo")
-                })
+                if (images && images.length > 0) {
+                  // Filter for images that look like logos
+                  const logoImages = images.filter((img) => {
+                    const titleLower = (img.title || "").toLowerCase()
+                    const sourceLower = (img.source || "").toLowerCase()
+                    const linkLower = (img.link || "").toLowerCase()
+                    return titleLower.includes("logo") || sourceLower.includes("logo") || linkLower.includes("logo")
+                  })
 
-                // Try to find a working image URL
-                const imagesToTry = logoImages.length > 0 ? logoImages : images.slice(0, 5)
+                  // Try to find a working image URL
+                  const imagesToTry = logoImages.length > 0 ? logoImages : images.slice(0, 5)
 
-                for (const img of imagesToTry) {
-                  // Prefer thumbnail as it's hosted on Google's servers
-                  const urlToTry = img.thumbnail || img.original
-                  if (!urlToTry) continue
+                  for (const img of imagesToTry) {
+                    // Prefer thumbnail as it's hosted on Google's servers
+                    const urlToTry = img.thumbnail || img.original
+                    if (!urlToTry) continue
 
-                  // Skip blocked domains for original URLs
-                  if (!img.thumbnail && blockedDomains.some((domain) => urlToTry.includes(domain))) {
-                    continue
-                  }
+                    // Skip blocked domains for original URLs
+                    if (!img.thumbnail && blockedDomains.some((domain) => urlToTry.includes(domain))) {
+                      continue
+                    }
 
-                  // Use the thumbnail directly (Google-hosted, always accessible)
-                  if (img.thumbnail) {
-                    newLogoUrl = img.thumbnail
-                    source = "serp-images"
-                    console.log(`[v0] Found logo via SERP Images for ${outlet.name}: ${newLogoUrl}`)
-                    break
+                    // Use the thumbnail directly (Google-hosted, always accessible)
+                    if (img.thumbnail) {
+                      newLogoUrl = img.thumbnail
+                      source = "serp-images"
+                      break
+                    }
                   }
                 }
               } catch (serpError) {
-                console.log(`[v0] SERP Images failed for ${outlet.name}:`, serpError)
+                // SERP failed silently, try next source
               }
             }
 
@@ -136,7 +123,6 @@ export async function POST(request: Request) {
                 if (response.ok) {
                   newLogoUrl = clearbitUrl
                   source = "clearbit"
-                  console.log(`[v0] Found logo via Clearbit for ${outlet.name}: ${newLogoUrl}`)
                 }
               } catch {
                 // Clearbit failed, try next
@@ -149,30 +135,29 @@ export async function POST(request: Request) {
                 const domain = new URL(outlet.website).hostname
                 newLogoUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
                 source = "google-favicon"
-                console.log(`[v0] Using Google Favicon for ${outlet.name}: ${newLogoUrl}`)
               } catch {
                 // Google favicon failed
               }
             }
 
-            // Update the outlet with new logo
+            // Using correct field names: outletName (not outlet), outletId
             if (newLogoUrl && newLogoUrl !== outlet.logo) {
               const updatedOutlet = { ...outlet, logo: newLogoUrl }
               updatedOutletsMap.set(outlet.id, updatedOutlet)
-              console.log(`[v0] Updated logo for ${outlet.name} (${source}): ${newLogoUrl}`)
               successCount++
 
               sendEvent({
                 type: "progress",
                 current: i + 1,
                 total: outletsToProcess.length,
-                outlet: outlet.name,
+                outletId: outlet.id,
+                outletName: outlet.name,
                 success: true,
                 result: {
-                  outlet: outlet.name,
+                  outletId: outlet.id,
+                  outletName: outlet.name,
                   success: true,
-                  logo: newLogoUrl,
-                  source,
+                  data: { logo: newLogoUrl, source },
                 },
               })
             } else if (newLogoUrl) {
@@ -182,13 +167,14 @@ export async function POST(request: Request) {
                 type: "progress",
                 current: i + 1,
                 total: outletsToProcess.length,
-                outlet: outlet.name,
+                outletId: outlet.id,
+                outletName: outlet.name,
                 success: true,
                 result: {
-                  outlet: outlet.name,
+                  outletId: outlet.id,
+                  outletName: outlet.name,
                   success: true,
-                  logo: outlet.logo,
-                  source: "unchanged",
+                  data: { logo: outlet.logo, source: "unchanged" },
                 },
               })
             } else {
@@ -198,27 +184,30 @@ export async function POST(request: Request) {
                 type: "progress",
                 current: i + 1,
                 total: outletsToProcess.length,
-                outlet: outlet.name,
+                outletId: outlet.id,
+                outletName: outlet.name,
                 success: false,
                 result: {
-                  outlet: outlet.name,
+                  outletId: outlet.id,
+                  outletName: outlet.name,
                   success: false,
                   error: "No logo found",
                 },
               })
             }
           } catch (error) {
-            console.error(`[v0] Error updating logo for ${outlet.name}:`, error)
             failedCount++
 
             sendEvent({
               type: "progress",
               current: i + 1,
               total: outletsToProcess.length,
-              outlet: outlet.name,
+              outletId: outlet.id,
+              outletName: outlet.name,
               success: false,
               result: {
-                outlet: outlet.name,
+                outletId: outlet.id,
+                outletName: outlet.name,
                 success: false,
                 error: error instanceof Error ? error.message : "Unknown error",
               },
@@ -227,12 +216,13 @@ export async function POST(request: Request) {
         }
 
         if (updatedOutletsMap.size > 0) {
+          console.log(`[v0] Saving ${updatedOutletsMap.size} updated outlets to blob`)
           const finalOutlets = allOutlets.map((o) => updatedOutletsMap.get(o.id) || o)
-          await saveOutletsToBlob(finalOutlets)
-          console.log(`[v0] Saved ${updatedOutletsMap.size} updated logos to blob storage`)
+          const saveResult = await saveOutletsToBlob(finalOutlets)
+          console.log(`[v0] Save result:`, saveResult)
         }
 
-        // Send completion event
+        console.log(`[v0] Sending completion event: success=${successCount}, failed=${failedCount}`)
         sendEvent({
           type: "complete",
           totalProcessed: outletsToProcess.length,
@@ -241,6 +231,8 @@ export async function POST(request: Request) {
           message: `Logo update complete: ${successCount} updated, ${failedCount} failed`,
         })
 
+        await new Promise((resolve) => setTimeout(resolve, 100))
+
         controller.close()
       } catch (error) {
         console.error("[v0] Update logos error:", error)
@@ -248,6 +240,7 @@ export async function POST(request: Request) {
           type: "error",
           error: error instanceof Error ? error.message : "Failed to update logos",
         })
+        await new Promise((resolve) => setTimeout(resolve, 100))
         controller.close()
       }
     },
