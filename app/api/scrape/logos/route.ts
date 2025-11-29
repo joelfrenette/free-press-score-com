@@ -10,8 +10,16 @@ export async function POST(request: Request) {
   const stream = new ReadableStream({
     async start(controller) {
       const sendEvent = (data: Record<string, unknown>) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+        } catch (e) {
+          console.error("[v0] Failed to send event:", e)
+        }
       }
+
+      let successCount = 0
+      let failedCount = 0
+      let totalOutlets = 0
 
       try {
         const body = await request.json()
@@ -34,15 +42,14 @@ export async function POST(request: Request) {
           outletsToProcess = allOutlets.filter((o) => o.scpiScore !== undefined)
         }
 
+        totalOutlets = outletsToProcess.length
+
         // Send start event
         sendEvent({
           type: "start",
-          total: outletsToProcess.length,
-          message: `Starting logo updates for ${outletsToProcess.length} outlets`,
+          total: totalOutlets,
+          message: `Starting logo updates for ${totalOutlets} outlets`,
         })
-
-        let successCount = 0
-        let failedCount = 0
 
         // Known blocked domains that return 403
         const blockedDomains = [
@@ -66,8 +73,6 @@ export async function POST(request: Request) {
           const outlet = outletsToProcess[i]
 
           try {
-            // Now we only send ONE progress event per outlet with the final result
-
             let newLogoUrl: string | null = null
             let source = "none"
 
@@ -106,7 +111,7 @@ export async function POST(request: Request) {
                     }
                   }
                 }
-              } catch (serpError) {
+              } catch {
                 // SERP failed silently, try next source
               }
             }
@@ -140,7 +145,6 @@ export async function POST(request: Request) {
               }
             }
 
-            // Using correct field names: outletName (not outlet), outletId
             if (newLogoUrl && newLogoUrl !== outlet.logo) {
               const updatedOutlet = { ...outlet, logo: newLogoUrl }
               updatedOutletsMap.set(outlet.id, updatedOutlet)
@@ -149,7 +153,7 @@ export async function POST(request: Request) {
               sendEvent({
                 type: "progress",
                 current: i + 1,
-                total: outletsToProcess.length,
+                total: totalOutlets,
                 outletId: outlet.id,
                 outletName: outlet.name,
                 success: true,
@@ -166,7 +170,7 @@ export async function POST(request: Request) {
               sendEvent({
                 type: "progress",
                 current: i + 1,
-                total: outletsToProcess.length,
+                total: totalOutlets,
                 outletId: outlet.id,
                 outletName: outlet.name,
                 success: true,
@@ -183,7 +187,7 @@ export async function POST(request: Request) {
               sendEvent({
                 type: "progress",
                 current: i + 1,
-                total: outletsToProcess.length,
+                total: totalOutlets,
                 outletId: outlet.id,
                 outletName: outlet.name,
                 success: false,
@@ -201,7 +205,7 @@ export async function POST(request: Request) {
             sendEvent({
               type: "progress",
               current: i + 1,
-              total: outletsToProcess.length,
+              total: totalOutlets,
               outletId: outlet.id,
               outletName: outlet.name,
               success: false,
@@ -216,32 +220,41 @@ export async function POST(request: Request) {
         }
 
         if (updatedOutletsMap.size > 0) {
-          console.log(`[v0] Saving ${updatedOutletsMap.size} updated outlets to blob`)
-          const finalOutlets = allOutlets.map((o) => updatedOutletsMap.get(o.id) || o)
-          const saveResult = await saveOutletsToBlob(finalOutlets)
-          console.log(`[v0] Save result:`, saveResult)
+          try {
+            const finalOutlets = allOutlets.map((o) => updatedOutletsMap.get(o.id) || o)
+            await Promise.race([
+              saveOutletsToBlob(finalOutlets),
+              new Promise((_, reject) => setTimeout(() => reject(new Error("Blob save timeout")), 30000)),
+            ])
+          } catch (saveError) {
+            console.error("[v0] Blob save error (non-fatal):", saveError)
+            // Continue to send completion event even if save fails
+          }
         }
 
-        console.log(`[v0] Sending completion event: success=${successCount}, failed=${failedCount}`)
         sendEvent({
           type: "complete",
-          totalProcessed: outletsToProcess.length,
+          totalProcessed: totalOutlets,
           totalSuccess: successCount,
           totalFailed: failedCount,
           message: `Logo update complete: ${successCount} updated, ${failedCount} failed`,
         })
-
-        await new Promise((resolve) => setTimeout(resolve, 100))
-
-        controller.close()
       } catch (error) {
         console.error("[v0] Update logos error:", error)
         sendEvent({
-          type: "error",
-          error: error instanceof Error ? error.message : "Failed to update logos",
+          type: "complete",
+          totalProcessed: totalOutlets,
+          totalSuccess: successCount,
+          totalFailed: failedCount,
+          message: `Logo update ended with error: ${error instanceof Error ? error.message : "Unknown error"}`,
         })
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        controller.close()
+      } finally {
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        try {
+          controller.close()
+        } catch {
+          // Controller may already be closed
+        }
       }
     },
   })
