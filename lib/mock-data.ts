@@ -1,6 +1,10 @@
 import type { MediaOutlet } from "./types"
+import { saveOutletsToBlob, loadOutletsFromBlob } from "./blob-storage"
 
 export type { MediaOutlet } from "./types"
+
+let hasLoadedFromBlob = false
+let saveTimeout: NodeJS.Timeout | null = null
 
 // Helper function for fuzzy matching
 function levenshteinDistance(str1: string, str2: string): number {
@@ -83,11 +87,62 @@ function calculateSimilarity(str1: string, str2: string): number {
   return (longer.length - costs[s2.length]) / longer.length
 }
 
+async function debouncedSaveToBlob() {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout)
+  }
+  saveTimeout = setTimeout(async () => {
+    console.log("[v0] Auto-saving outlets to Blob...")
+    await saveOutletsToBlob(mediaOutlets)
+  }, 2000) // Wait 2 seconds after last change before saving
+}
+
+export async function saveOutlets(): Promise<{ success: boolean; error?: string }> {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout)
+    saveTimeout = null
+  }
+  const result = await saveOutletsToBlob(mediaOutlets)
+  return result
+}
+
+export async function loadOutlets(): Promise<{ loaded: boolean; count: number; source: string }> {
+  if (hasLoadedFromBlob) {
+    return { loaded: true, count: mediaOutlets.length, source: "cache" }
+  }
+
+  try {
+    const { outlets, error } = await loadOutletsFromBlob()
+
+    if (outlets && outlets.length > 0) {
+      // Replace in-memory array with blob data
+      mediaOutlets.length = 0
+      mediaOutlets.push(...outlets)
+      hasLoadedFromBlob = true
+      console.log(`[v0] Loaded ${outlets.length} outlets from Blob storage`)
+      return { loaded: true, count: outlets.length, source: "blob" }
+    } else {
+      hasLoadedFromBlob = true
+      console.log(`[v0] No blob data found, using seed data (${mediaOutlets.length} outlets)`)
+      return { loaded: true, count: mediaOutlets.length, source: "seed" }
+    }
+  } catch (error) {
+    console.error("[v0] Failed to load from Blob:", error)
+    hasLoadedFromBlob = true
+    return { loaded: false, count: mediaOutlets.length, source: "seed" }
+  }
+}
+
+export function getLoadStatus(): { hasLoaded: boolean; count: number } {
+  return { hasLoaded: hasLoadedFromBlob, count: mediaOutlets.length }
+}
+
 export function updateOutlet(id: string, updates: Partial<MediaOutlet>): boolean {
   const index = mediaOutlets.findIndex((o) => o.id === id)
   if (index !== -1) {
     mediaOutlets[index] = { ...mediaOutlets[index], ...updates }
     console.log(`[v0] Updated outlet ${id} with new data`)
+    debouncedSaveToBlob() // Auto-save after update
     return true
   }
   return false
@@ -102,6 +157,7 @@ export function addOutlet(outlet: MediaOutlet): boolean {
   }
   mediaOutlets.push(outlet)
   console.log(`[v0] Added new outlet: ${outlet.name}`)
+  debouncedSaveToBlob() // Auto-save after add
   return true
 }
 
@@ -291,6 +347,7 @@ export function removeOutletById(id: string): boolean {
   const index = mediaOutlets.findIndex((o) => o.id === id)
   if (index !== -1) {
     mediaOutlets.splice(index, 1)
+    debouncedSaveToBlob() // Auto-save after removal
     return true
   }
   return false

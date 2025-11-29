@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { findAllDuplicates, removeDuplicates, getOutletCount } from "@/lib/mock-data"
+import { findAllDuplicates, removeDuplicates, getOutletCount, loadOutlets, saveOutlets } from "@/lib/mock-data"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -7,6 +7,8 @@ export const revalidate = 0
 // GET - Find all duplicates
 export async function GET() {
   try {
+    await loadOutlets()
+
     console.log("[v0] Scanning for duplicates...")
     const duplicates = findAllDuplicates()
     console.log(`[v0] Found ${duplicates.length} duplicate groups`)
@@ -29,10 +31,14 @@ export async function GET() {
 // POST - Merge (remove) all duplicates
 export async function POST() {
   try {
+    await loadOutlets()
+
     console.log("[v0] Starting duplicate removal...")
     const beforeCount = getOutletCount()
     const result = removeDuplicates()
     const afterCount = getOutletCount()
+
+    await saveOutlets()
 
     console.log(
       `[v0] Duplicate removal complete. Before: ${beforeCount}, After: ${afterCount}, Removed: ${result.removed}`,

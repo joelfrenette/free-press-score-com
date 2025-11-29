@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getOutletCount, mediaOutlets } from "@/lib/mock-data"
+import { getOutletCount, mediaOutlets, loadOutlets } from "@/lib/mock-data"
 
 // Disable caching for this route
 export const dynamic = "force-dynamic"
@@ -7,6 +7,8 @@ export const revalidate = 0
 
 export async function GET() {
   try {
+    await loadOutlets()
+
     const count = getOutletCount()
     console.log("[v0] API /outlets/count returning:", count, "outlets. Array length:", mediaOutlets.length)
     return NextResponse.json({ count })

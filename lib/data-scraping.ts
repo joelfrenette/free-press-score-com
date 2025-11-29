@@ -25,6 +25,17 @@ export interface DiscoveryFilters {
 const existingOutlets = mediaOutlets
 
 // Also added ScrapingBee web scraping integration for supplementary data
+
+function normalizeUrl(url: string): string {
+  // Remove trailing slash
+  let normalized = url.replace(/\/+$/, "")
+  // Ensure https:// prefix
+  if (!normalized.startsWith("http://") && !normalized.startsWith("https://")) {
+    normalized = `https://${normalized}`
+  }
+  return normalized
+}
+
 async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<string | null> {
   // 1. Try Groq FIRST (fastest - Llama on custom hardware, sub-second responses)
   const groqKey = process.env.GROQ_API_KEY
@@ -259,8 +270,9 @@ async function scrapeWebsiteWithScrapingBee(url: string): Promise<{ html: string
   }
 
   try {
-    console.log(`[v0] Scraping ${url} with ScrapingBee...`)
-    const apiUrl = `https://app.scrapingbee.com/api/v1/?api_key=${scrapingBeeKey}&url=${encodeURIComponent(url)}&render_js=false&premium_proxy=false`
+    const normalizedUrl = normalizeUrl(url)
+    console.log(`[v0] Scraping ${normalizedUrl} with ScrapingBee...`)
+    const apiUrl = `https://app.scrapingbee.com/api/v1/?api_key=${scrapingBeeKey}&url=${encodeURIComponent(normalizedUrl)}&render_js=false&premium_proxy=false`
     const response = await fetch(apiUrl)
 
     if (!response.ok) {
@@ -269,7 +281,7 @@ async function scrapeWebsiteWithScrapingBee(url: string): Promise<{ html: string
     }
 
     const html = await response.text()
-    console.log(`[v0] ScrapingBee scraped ${html.length} bytes from ${url}`)
+    console.log(`[v0] ScrapingBee scraped ${html.length} bytes from ${normalizedUrl}`)
     return { html, success: true }
   } catch (error) {
     console.log("[v0] ScrapingBee error:", error)
@@ -782,13 +794,9 @@ export async function scrapeOwnershipData(
     // First try to scrape about/ownership page with ScrapingBee
     let scrapedContext = ""
     if (outlet.website) {
+      const baseUrl = normalizeUrl(outlet.website)
       // Try common about page URLs
-      const aboutUrls = [
-        `${outlet.website}/about`,
-        `${outlet.website}/about-us`,
-        `${outlet.website}/corporate`,
-        `${outlet.website}/company`,
-      ]
+      const aboutUrls = [`${baseUrl}/about`, `${baseUrl}/about-us`, `${baseUrl}/corporate`, `${baseUrl}/company`]
 
       for (const aboutUrl of aboutUrls) {
         const webData = await scrapeWebsiteWithScrapingBee(aboutUrl)
@@ -1307,29 +1315,46 @@ export async function updateOutletLogos(
       let logoUrl: string | null = null
       let source = "placeholder"
 
-      // Try Clearbit Logo API (free, high quality)
       if (outlet.website) {
-        try {
-          const domain = new URL(outlet.website).hostname.replace("www.", "")
-          const clearbitUrl = `https://logo.clearbit.com/${domain}`
-          const response = await fetch(clearbitUrl, { method: "HEAD" })
-          if (response.ok) {
-            logoUrl = clearbitUrl
-            source = "clearbit"
+        const domain = (() => {
+          try {
+            return new URL(outlet.website!).hostname.replace("www.", "")
+          } catch {
+            return null
           }
-        } catch {
-          // Continue to next source
-        }
-      }
+        })()
 
-      // Try Google Favicon as fallback
-      if (!logoUrl && outlet.website) {
-        try {
-          const domain = new URL(outlet.website).hostname
-          logoUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
-          source = "google-favicon"
-        } catch {
-          // Continue
+        if (domain) {
+          // Try Clearbit Logo API (free, high quality)
+          const clearbitUrl = `https://logo.clearbit.com/${domain}`
+          try {
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+            // Use GET with no-cors mode to avoid throwing on 404
+            const response = await Promise.race([
+              fetch(clearbitUrl, {
+                method: "HEAD",
+                signal: controller.signal,
+              }),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+            ]).catch(() => null)
+
+            clearTimeout(timeoutId)
+
+            if (response && response instanceof Response && response.ok) {
+              logoUrl = clearbitUrl
+              source = "clearbit"
+            }
+          } catch {
+            // Silently fail - Clearbit doesn't have this logo
+          }
+
+          // Try Google Favicon as fallback
+          if (!logoUrl) {
+            logoUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
+            source = "google-favicon"
+          }
         }
       }
 
