@@ -20,6 +20,7 @@ import {
   Scale,
   FileText,
   TrendingUp,
+  Copy,
 } from "lucide-react"
 import Link from "next/link"
 import {
@@ -28,6 +29,7 @@ import {
   type DiscoveryResults,
   type DiscoveredOutlet,
 } from "./discover-outlets-dialog"
+import { MergeDuplicatesDialog } from "./merge-duplicates-dialog"
 
 interface ScrapeResult {
   outletId: string
@@ -65,6 +67,8 @@ export function AdminDashboardClient({
   const [currentOutletCount, setCurrentOutletCount] = useState(initialTotalOutlets)
   const [scrapableCount, setScrapableCount] = useState(scrapableOutlets.length)
   const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const [showMergeDuplicatesDialog, setShowMergeDuplicatesDialog] = useState(false)
 
   const refreshAllStats = async () => {
     setIsRefreshing(true)
@@ -592,7 +596,7 @@ export function AdminDashboardClient({
         <Card className="p-6">
           <div className="mb-4 flex items-start gap-4">
             <div className="rounded-lg bg-cyan-500/10 p-3">
-              <Database className="h-6 w-6 text-cyan-600" />
+              <Copy className="h-6 w-6 text-cyan-600" />
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-foreground">Merge Duplicates</h3>
@@ -600,22 +604,13 @@ export function AdminDashboardClient({
             </div>
           </div>
           <Button
-            onClick={() => handleBulkOperation("merge")}
-            disabled={isScraping || !hasApiKey}
+            onClick={() => setShowMergeDuplicatesDialog(true)}
+            disabled={isScraping}
             className="w-full gap-2"
             variant="default"
           >
-            {isScraping && activeOperation === "merge" ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Merging...
-              </>
-            ) : (
-              <>
-                <Database className="h-4 w-4" />
-                Merge Duplicates
-              </>
-            )}
+            <Copy className="h-4 w-4" />
+            Merge Duplicates
           </Button>
         </Card>
 
@@ -722,6 +717,13 @@ export function AdminDashboardClient({
           </div>
         </Card>
       )}
+
+      {/* Merge Duplicates Dialog */}
+      <MergeDuplicatesDialog
+        open={showMergeDuplicatesDialog}
+        onOpenChange={setShowMergeDuplicatesDialog}
+        onMergeComplete={refreshAllStats}
+      />
     </div>
   )
 }

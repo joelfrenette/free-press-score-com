@@ -20,6 +20,97 @@ export function outletExists(name: string): boolean {
   )
 }
 
+export function findAllDuplicates(): Array<{
+  name: string
+  ids: string[]
+  count: number
+}> {
+  const nameMap = new Map<string, string[]>()
+
+  for (const outlet of mediaOutlets) {
+    const normalizedName = outlet.name.toLowerCase().trim()
+    if (!nameMap.has(normalizedName)) {
+      nameMap.set(normalizedName, [])
+    }
+    nameMap.get(normalizedName)!.push(outlet.id)
+  }
+
+  const duplicates: Array<{ name: string; ids: string[]; count: number }> = []
+
+  for (const [name, ids] of nameMap.entries()) {
+    if (ids.length > 1) {
+      // Find the original name (not normalized)
+      const originalName = mediaOutlets.find((o) => o.name.toLowerCase().trim() === name)?.name || name
+      duplicates.push({
+        name: originalName,
+        ids,
+        count: ids.length,
+      })
+    }
+  }
+
+  return duplicates
+}
+
+export function removeDuplicates(): {
+  removed: number
+  duplicatesFound: Array<{ name: string; kept: string; removed: string[] }>
+} {
+  const nameMap = new Map<string, number[]>()
+
+  // Find indices of all outlets, grouped by normalized name
+  for (let i = 0; i < mediaOutlets.length; i++) {
+    const normalizedName = mediaOutlets[i].name.toLowerCase().trim()
+    if (!nameMap.has(normalizedName)) {
+      nameMap.set(normalizedName, [])
+    }
+    nameMap.get(normalizedName)!.push(i)
+  }
+
+  const duplicatesFound: Array<{ name: string; kept: string; removed: string[] }> = []
+  const indicesToRemove: number[] = []
+
+  for (const [name, indices] of nameMap.entries()) {
+    if (indices.length > 1) {
+      // Keep the first one (lowest index), remove the rest
+      const keepIndex = indices[0]
+      const removeIndices = indices.slice(1)
+      indicesToRemove.push(...removeIndices)
+
+      const keptOutlet = mediaOutlets[keepIndex]
+      const removedIds = removeIndices.map((i) => mediaOutlets[i].id)
+
+      duplicatesFound.push({
+        name: keptOutlet.name,
+        kept: keptOutlet.id,
+        removed: removedIds,
+      })
+    }
+  }
+
+  // Sort indices in descending order to remove from end first (preserves indices)
+  indicesToRemove.sort((a, b) => b - a)
+
+  // Remove duplicates
+  for (const index of indicesToRemove) {
+    mediaOutlets.splice(index, 1)
+  }
+
+  return {
+    removed: indicesToRemove.length,
+    duplicatesFound,
+  }
+}
+
+export function removeOutletById(id: string): boolean {
+  const index = mediaOutlets.findIndex((o) => o.id === id)
+  if (index !== -1) {
+    mediaOutlets.splice(index, 1)
+    return true
+  }
+  return false
+}
+
 // Calculations: TV primetime × 30 days, digital monthly visitors, print circulation × 30
 export const mediaOutlets: MediaOutlet[] = [
   // ===== UNITED STATES - TRADITIONAL MEDIA =====
