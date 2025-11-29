@@ -1431,50 +1431,78 @@ export async function mergeDuplicateOutlets(
 
 // Update outlet logos
 export async function updateOutletLogos(
-  outlets: Array<{ id: string; name: string; website?: string }>,
-): Promise<ScrapeResult[]> {
-  console.log(
-    "[v0] Updating logos for outlets:",
-    outlets.map((o) => o.name),
-  )
-  const results = []
+  outlets: MediaOutlet[],
+  onProgress?: (outlet: string, success: boolean, logoUrl?: string) => void,
+): Promise<{ updated: number; failed: number; results: Array<{ name: string; success: boolean; logo?: string }> }> {
+  let updated = 0
+  let failed = 0
+  const results: Array<{ name: string; success: boolean; logo?: string }> = []
 
   for (const outlet of outlets) {
     try {
       let logoUrl: string | null = null
-      let source = "placeholder"
+      let source = ""
 
-      const serpKey = process.env.SERP_API_KEY
-      if (serpKey) {
+      // Try SERP Images API first (using thumbnails which are Google-hosted and always accessible)
+      if (process.env.SERP_API_KEY) {
         try {
-          const imageResults = await searchImagesWithSERP(`${outlet.name} official logo transparent png`, {
-            num: 3,
-            imgsz: "m",
+          const images = await searchImagesWithSERP(`${outlet.name} official logo png`, {
+            imgsz: "m", // Medium size for good quality
+            num: 5,
           })
 
-          if (imageResults && imageResults.length > 0) {
-            // Find the best logo image (prefer ones with "logo" in title/source)
-            const logoImage =
-              imageResults.find(
-                (img: any) => img.title?.toLowerCase().includes("logo") || img.source?.toLowerCase().includes("logo"),
-              ) || imageResults[0]
+          if (images && images.length > 0) {
+            // Prefer images with "logo" in title/source
+            const logoImages = images.filter(
+              (img: any) =>
+                img.title?.toLowerCase().includes("logo") ||
+                img.source?.toLowerCase().includes("logo") ||
+                img.link?.toLowerCase().includes("logo"),
+            )
 
-            if (logoImage?.original) {
-              // Verify the image URL is accessible
-              const controller = new AbortController()
-              const timeoutId = setTimeout(() => controller.abort(), 5000)
+            const bestImages = logoImages.length > 0 ? logoImages : images
 
-              const imgResponse = await fetch(logoImage.original, {
-                method: "HEAD",
-                signal: controller.signal,
-              }).catch(() => null)
-
-              clearTimeout(timeoutId)
-
-              if (imgResponse && imgResponse.ok) {
-                logoUrl = logoImage.original
+            for (const img of bestImages) {
+              // Use thumbnail (Google-hosted) to avoid 403 errors from source sites
+              if (img.thumbnail) {
+                logoUrl = img.thumbnail
                 source = "serp-images"
-                console.log(`[v0] Found logo via SERP Images for ${outlet.name}`)
+                console.log(`[v0] Found logo via SERP Images for ${outlet.name}: ${img.thumbnail}`)
+                break
+              }
+              // Fall back to original if no thumbnail, with validation
+              if (img.original) {
+                // Skip known blocked domains
+                const blockedDomains = ["seeklogo.com", "logowik.com", "brandlogos.net", "pngegg.com", "pngwing.com"]
+                try {
+                  const imgDomain = new URL(img.original).hostname.toLowerCase()
+                  if (blockedDomains.some((domain) => imgDomain.includes(domain))) {
+                    continue
+                  }
+                } catch {
+                  continue
+                }
+
+                // Validate original URL is accessible
+                try {
+                  const controller = new AbortController()
+                  const timeoutId = setTimeout(() => controller.abort(), 3000)
+                  const imgResponse = await fetch(img.original, {
+                    method: "HEAD",
+                    signal: controller.signal,
+                    headers: { "User-Agent": "Mozilla/5.0 (compatible; LogoFetcher/1.0)" },
+                  }).catch(() => null)
+                  clearTimeout(timeoutId)
+
+                  if (imgResponse && imgResponse.ok) {
+                    logoUrl = img.original
+                    source = "serp-images"
+                    console.log(`[v0] Found logo via SERP Images (original) for ${outlet.name}: ${img.original}`)
+                    break
+                  }
+                } catch {
+                  continue
+                }
               }
             }
           }
@@ -1501,9 +1529,10 @@ export async function updateOutletLogos(
           if (response && response.ok) {
             logoUrl = clearbitUrl
             source = "clearbit"
+            console.log(`[v0] Found logo via Clearbit for ${outlet.name}`)
           }
         } catch {
-          // Continue to next source - Clearbit doesn't have this logo
+          // Continue to next source
         }
       }
 
@@ -1513,51 +1542,39 @@ export async function updateOutletLogos(
           const domain = new URL(outlet.website).hostname
           logoUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
           source = "google-favicon"
+          console.log(`[v0] Using Google Favicon for ${outlet.name}`)
         } catch {
           // Continue
         }
       }
 
-      // Try SERP Images API as a last resort
-      if (!logoUrl && outlet.website) {
-        try {
-          const images = await searchImagesWithSERP(`${outlet.name} logo`, { imgsz: "i", num: 1 }) // Search for icon size
-          if (images && images.length > 0 && images[0].original) {
-            logoUrl = images[0].original
-            source = "serp-images"
-          }
-        } catch {
-          // Continue
-        }
-      }
-
-      // Final fallback
+      // Final fallback - use placeholder
       if (!logoUrl) {
-        logoUrl = `/placeholder.svg?height=100&width=100&query=${encodeURIComponent(outlet.name + " logo")}`
+        logoUrl = `/placeholder.svg?height=64&width=64&query=${encodeURIComponent(outlet.name + " logo")}`
         source = "placeholder"
+        console.log(`[v0] Using placeholder for ${outlet.name}`)
       }
 
-      // Update in database
-      updateOutlet(outlet.id, { logo: logoUrl })
+      // Update the outlet's logo
+      outlet.logo = logoUrl
+      updated++
+      results.push({ name: outlet.name, success: true, logo: logoUrl })
+      console.log(`[v0] Updated logo for ${outlet.name} (${source}): ${logoUrl}`)
 
-      results.push({
-        outletId: outlet.id,
-        success: true,
-        data: { logoUrl, source },
-      })
-      console.log(`[v0] Updated logo for ${outlet.name} from ${source}`)
+      if (onProgress) {
+        onProgress(outlet.name, true, logoUrl)
+      }
     } catch (error) {
-      results.push({
-        outletId: outlet.id,
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      })
+      console.error(`[v0] Failed to update logo for ${outlet.name}:`, error)
+      failed++
+      results.push({ name: outlet.name, success: false })
+      if (onProgress) {
+        onProgress(outlet.name, false)
+      }
     }
-
-    await new Promise((resolve) => setTimeout(resolve, 300))
   }
 
-  return results
+  return { updated, failed, results }
 }
 
 // Curated fallback list for when AI fails
