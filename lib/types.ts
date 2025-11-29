@@ -217,11 +217,9 @@ export const COUNTRIES = [
   "Middle East",
   "China",
   "India",
-  "Argentina",
-  "Brazil",
+  "Central & South America",
   "Mexico",
   "Japan",
-  "Qatar",
 ] as const
 
 export type Country = (typeof COUNTRIES)[number]

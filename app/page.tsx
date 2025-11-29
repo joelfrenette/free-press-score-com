@@ -54,9 +54,20 @@ export default function Home() {
       filtered = filtered.filter((outlet) => outlet.outletType === "influencer")
     }
 
-    // Filter by country
     if (selectedCountry !== "all") {
-      filtered = filtered.filter((outlet) => outlet.country === selectedCountry)
+      filtered = filtered.filter((outlet) => {
+        if (selectedCountry === "Central & South America") {
+          return (
+            outlet.country === "Argentina" ||
+            outlet.country === "Brazil" ||
+            outlet.country === "Central & South America"
+          )
+        }
+        if (selectedCountry === "Middle East") {
+          return outlet.country === "Middle East" || outlet.country === "Qatar"
+        }
+        return outlet.country === selectedCountry
+      })
     }
 
     // Filter by bias
@@ -124,41 +135,88 @@ export default function Home() {
         </div>
 
         <Card className="mb-6 p-3">
-          <div className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
-            {/* Filter Icon & Title */}
-            <div className="flex items-center gap-1.5">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold text-foreground">Filters & Sort</h2>
+          <div className="flex flex-col gap-3">
+            {/* Top row: Filter label, Media Type tabs, Bias dropdown, Sort dropdown, Refresh button */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Filter Icon & Title */}
+              <div className="flex items-center gap-1.5">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold text-foreground">Filters & Sort</h2>
+              </div>
+
+              {/* Media Type Tabs */}
+              <Tabs value={mediaTypeFilter} onValueChange={setMediaTypeFilter}>
+                <TabsList className="h-8">
+                  <TabsTrigger value="all" className="h-7 gap-1 px-2 text-xs">
+                    All
+                    <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px]">
+                      {mediaCounts.all}
+                    </Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="traditional" className="h-7 gap-1 px-2 text-xs">
+                    Legacy
+                    <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px]">
+                      {mediaCounts.traditional}
+                    </Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="influencer" className="h-7 gap-1 px-2 text-xs">
+                    New
+                    <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px]">
+                      {mediaCounts.influencer}
+                    </Badge>
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+
+              {/* Bias Filter - moved to top row */}
+              <Select value={biasFilter} onValueChange={setBiasFilter}>
+                <SelectTrigger className="h-8 w-[130px] text-xs">
+                  <SelectValue placeholder="All Bias" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Bias</SelectItem>
+                  <SelectItem value="far-left">Far Left</SelectItem>
+                  <SelectItem value="left">Left</SelectItem>
+                  <SelectItem value="center">Center</SelectItem>
+                  <SelectItem value="right">Right</SelectItem>
+                  <SelectItem value="far-right">Far Right</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Sort Filter - moved to top row */}
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="h-8 w-[130px] text-xs">
+                  <SelectValue placeholder="Sort" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="score-desc">Highest Score</SelectItem>
+                  <SelectItem value="score-asc">Lowest Score</SelectItem>
+                  <SelectItem value="name">Name (A-Z)</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Refresh button - moved to top right */}
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  <span className="font-semibold text-foreground">{filteredOutlets.length}</span> outlets
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className="h-7 gap-1 px-2 text-xs bg-transparent"
+                >
+                  <RefreshCw className={`h-3 w-3 ${isRefreshing ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </div>
             </div>
 
-            {/* Media Type Tabs - Compact */}
-            <Tabs value={mediaTypeFilter} onValueChange={setMediaTypeFilter}>
-              <TabsList className="h-8">
-                <TabsTrigger value="all" className="h-7 gap-1 px-2 text-xs">
-                  All
-                  <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px]">
-                    {mediaCounts.all}
-                  </Badge>
-                </TabsTrigger>
-                <TabsTrigger value="traditional" className="h-7 gap-1 px-2 text-xs">
-                  Legacy
-                  <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px]">
-                    {mediaCounts.traditional}
-                  </Badge>
-                </TabsTrigger>
-                <TabsTrigger value="influencer" className="h-7 gap-1 px-2 text-xs">
-                  New
-                  <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px]">
-                    {mediaCounts.influencer}
-                  </Badge>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-
-            {/* Country Filter - Compact with mobile scrolling */}
-            <div className="w-full overflow-x-auto sm:w-auto">
+            {/* Bottom row: Country filters only */}
+            <div className="w-full overflow-x-auto">
               <Tabs value={selectedCountry} onValueChange={setSelectedCountry}>
-                <TabsList className="flex h-8 flex-nowrap justify-start gap-1 bg-transparent p-0 sm:flex-wrap">
+                <TabsList className="flex h-8 flex-nowrap justify-start gap-1 bg-transparent p-0">
                   <TabsTrigger
                     value="all"
                     className="h-7 shrink-0 px-2.5 text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
@@ -176,50 +234,6 @@ export default function Home() {
                   ))}
                 </TabsList>
               </Tabs>
-            </div>
-
-            {/* Bias & Sort Filters - Side by side on mobile */}
-            <div className="flex w-full gap-2 sm:w-auto">
-              <Select value={biasFilter} onValueChange={setBiasFilter}>
-                <SelectTrigger className="h-8 flex-1 text-xs sm:w-[140px] sm:flex-none">
-                  <SelectValue placeholder="All Bias" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Bias</SelectItem>
-                  <SelectItem value="far-left">Far Left</SelectItem>
-                  <SelectItem value="left">Left</SelectItem>
-                  <SelectItem value="center">Center</SelectItem>
-                  <SelectItem value="right">Right</SelectItem>
-                  <SelectItem value="far-right">Far Right</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="h-8 flex-1 text-xs sm:w-[140px] sm:flex-none">
-                  <SelectValue placeholder="Sort" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="score-desc">Highest Score</SelectItem>
-                  <SelectItem value="score-asc">Lowest Score</SelectItem>
-                  <SelectItem value="name">Name (A-Z)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
-              <span className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">{filteredOutlets.length}</span> outlets
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                className="h-7 gap-1 px-2 text-xs bg-transparent"
-              >
-                <RefreshCw className={`h-3 w-3 ${isRefreshing ? "animate-spin" : ""}`} />
-                Refresh
-              </Button>
             </div>
           </div>
         </Card>
