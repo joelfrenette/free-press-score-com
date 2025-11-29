@@ -1,7 +1,8 @@
 // Data Scraping Module - Uses Gemini AI as primary source with ScrapingBee fallback
 // Last updated: 2025-01-18
 
-import { mediaOutlets as existingOutlets } from "./mock-data"
+import { mediaOutlets as existingOutlets, addOutlet, outletExists } from "./mock-data"
+import type { MediaOutlet } from "./types"
 
 export interface OutletData {
   id: string
@@ -114,10 +115,17 @@ Only include real, verifiable media outlets. Return valid JSON array only, no ot
 
               const normalizedName = outlet.name.toLowerCase().trim()
               const isDuplicate =
+                outletExists(outlet.name) ||
                 existingNames.has(normalizedName) ||
                 Array.from(existingNames).some(
                   (existing) => existing.includes(normalizedName) || normalizedName.includes(existing),
                 )
+
+              if (!isDuplicate) {
+                const newOutlet = createOutletFromDiscovery(outlet, country, mediaTypes[0], minAudience)
+                addOutlet(newOutlet)
+                existingNames.add(normalizedName)
+              }
 
               results.push({
                 outletId: outlet.name.toLowerCase().replace(/\s+/g, "-"),
@@ -132,11 +140,6 @@ Only include real, verifiable media outlets. Return valid JSON array only, no ot
                 },
                 error: isDuplicate ? `"${outlet.name}" already exists in database` : undefined,
               })
-
-              // Add to existing names to prevent duplicates within same batch
-              if (!isDuplicate) {
-                existingNames.add(normalizedName)
-              }
             }
 
             if (results.length > 0) {
@@ -148,7 +151,6 @@ Only include real, verifiable media outlets. Return valid JSON array only, no ot
           }
         }
       } else {
-        // Log the error but continue to fallback
         console.log("[v0] Gemini API returned non-OK status, using fallback outlets")
       }
     } catch (error) {
@@ -168,10 +170,17 @@ Only include real, verifiable media outlets. Return valid JSON array only, no ot
 
       const normalizedName = outlet.name.toLowerCase().trim()
       const isDuplicate =
+        outletExists(outlet.name) ||
         existingNames.has(normalizedName) ||
         Array.from(existingNames).some(
           (existing) => existing.includes(normalizedName) || normalizedName.includes(existing),
         )
+
+      if (!isDuplicate) {
+        const newOutlet = createOutletFromDiscovery(outlet, country, mediaTypes[0], minAudience)
+        addOutlet(newOutlet)
+        existingNames.add(normalizedName)
+      }
 
       results.push({
         outletId: outlet.name.toLowerCase().replace(/\s+/g, "-"),
@@ -179,17 +188,15 @@ Only include real, verifiable media outlets. Return valid JSON array only, no ot
         data: outlet,
         error: isDuplicate ? `"${outlet.name}" already exists in database` : undefined,
       })
-
-      if (!isDuplicate) {
-        existingNames.add(normalizedName)
-      }
     }
   }
 
   // Simulate processing time
   await new Promise((resolve) => setTimeout(resolve, 1500))
 
-  console.log(`[v0] Total discovered: ${results.length} outlets`)
+  console.log(
+    `[v0] Discovery complete: ${results.filter((r) => r.success).length} added, ${results.filter((r) => !r.success).length} duplicates`,
+  )
   return results
 }
 
@@ -827,5 +834,55 @@ async function scrapeLogoWithScrapingBee(websiteUrl: string): Promise<string | n
   } catch (error) {
     console.log("[v0] Error scraping website for logo:", error)
     return null
+  }
+}
+
+function createOutletFromDiscovery(
+  data: {
+    name: string
+    website?: string
+    country?: string
+    mediaType?: string
+    estimatedAudience?: number
+    description?: string
+  },
+  defaultCountry: string,
+  defaultMediaType: string,
+  defaultAudience: number,
+): MediaOutlet {
+  const id = data.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+  const audience = data.estimatedAudience || defaultAudience
+  const audienceStr = audience >= 1000000 ? `${(audience / 1000000).toFixed(1)}M` : `${(audience / 1000).toFixed(0)}K`
+
+  return {
+    id,
+    name: data.name,
+    country: data.country || getCountryLabel(defaultCountry),
+    biasScore: 0, // Neutral by default, to be researched
+    freePressScore: 50, // Average by default, to be researched
+    logo: `/placeholder.svg?height=80&width=80&query=${encodeURIComponent(data.name + " logo")}`,
+    description: data.description || `${data.name} is a media outlet.`,
+    ownership: "Unknown - To be researched",
+    funding: ["Unknown"],
+    website: data.website || "",
+    outletType: data.mediaType === "social" ? "influencer" : "traditional",
+    metrics: {
+      type: (data.mediaType || defaultMediaType) as "tv" | "print" | "radio" | "podcast" | "social" | "legacy",
+      avgMonthlyAudience: audienceStr,
+    },
+    factCheckAccuracy: 50,
+    editorialIndependence: 50,
+    transparency: 50,
+    perspectives: "moderate",
+    stakeholders: [],
+    boardMembers: [],
+    retractions: [],
+    lawsuits: [],
+    scandals: [],
+    sponsors: [],
   }
 }
