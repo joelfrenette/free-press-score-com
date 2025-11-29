@@ -2,13 +2,26 @@ import { searchWithSERP, callAIWithCascade, parseJSONFromResponse } from "@/lib/
 import { getOutlets, updateOutlet } from "@/lib/mock-data"
 
 export async function POST(request: Request) {
-  const { outletIds, stream = true } = await request.json()
+  const { outlets: requestedOutlets, outletIds, stream = true } = await request.json()
 
   // Get all outlets that need updating
   const allOutlets = getOutlets()
-  const outlets = outletIds
-    ? allOutlets.filter((o) => outletIds.includes(o.id))
-    : allOutlets.filter((o) => o.isScrapable !== false)
+
+  let outlets
+  if (requestedOutlets && Array.isArray(requestedOutlets) && requestedOutlets.length > 0) {
+    // Client sent full outlet objects - extract IDs and filter
+    const requestedIds = requestedOutlets.map((o: any) => o.id)
+    outlets = allOutlets.filter((o) => requestedIds.includes(o.id))
+    console.log(`[v0] Legal: Received ${requestedOutlets.length} outlets from client, matched ${outlets.length}`)
+  } else if (outletIds && Array.isArray(outletIds) && outletIds.length > 0) {
+    // Legacy: Client sent array of IDs
+    outlets = allOutlets.filter((o) => outletIds.includes(o.id))
+    console.log(`[v0] Legal: Received ${outletIds.length} outlet IDs, matched ${outlets.length}`)
+  } else {
+    // Fallback: process all scrapable outlets
+    outlets = allOutlets.filter((o) => o.isScrapable !== false)
+    console.log(`[v0] Legal: No outlets specified, processing all ${outlets.length} scrapable outlets`)
+  }
 
   const systemPrompt = `You are a legal researcher specializing in media law. Research and return factual legal cases involving media outlets. Only include verified cases.`
 
