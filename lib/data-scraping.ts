@@ -1,5 +1,5 @@
-// Data Scraping Module - Uses Gemini AI as primary source with ScrapingBee fallback
-// Last updated: 2025-01-18
+// Data Scraping Module - Multi-AI cascade with fallbacks
+// Providers: OpenAI → Anthropic → Grok/xAI → Groq → Perplexity → OpenRouter → SERP → ScrapingBEE → Curated List
 
 import { mediaOutlets as existingOutlets, addOutlet, outletExists } from "./mock-data"
 import type { MediaOutlet } from "./types"
@@ -53,6 +53,422 @@ export async function getScrapingStatus(): Promise<{ active: boolean; queue: num
   return { active: false, queue: 0 }
 }
 
+async function discoverWithOpenAI(prompt: string): Promise<any[] | null> {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey || !apiKey.startsWith("sk-")) {
+    console.log("[v0] OpenAI API key not available or invalid")
+    return null
+  }
+
+  try {
+    console.log("[v0] Trying OpenAI GPT-4...")
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "You are a media research assistant. Return ONLY valid JSON arrays, no markdown or explanation.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      }),
+    })
+
+    if (!response.ok) {
+      console.log("[v0] OpenAI API error:", response.status)
+      return null
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+    if (!content) return null
+
+    // Parse JSON from response
+    const jsonMatch = content.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0])
+      console.log("[v0] OpenAI returned", parsed.length, "outlets")
+      return parsed
+    }
+    return null
+  } catch (error) {
+    console.log("[v0] OpenAI error:", error)
+    return null
+  }
+}
+
+async function discoverWithAnthropic(prompt: string): Promise<any[] | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey || !apiKey.startsWith("sk-ant-")) {
+    console.log("[v0] Anthropic API key not available or invalid")
+    return null
+  }
+
+  try {
+    console.log("[v0] Trying Anthropic Claude...")
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-3-haiku-20240307",
+        max_tokens: 2000,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    })
+
+    if (!response.ok) {
+      console.log("[v0] Anthropic API error:", response.status)
+      return null
+    }
+
+    const data = await response.json()
+    const content = data.content?.[0]?.text
+    if (!content) return null
+
+    const jsonMatch = content.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0])
+      console.log("[v0] Anthropic returned", parsed.length, "outlets")
+      return parsed
+    }
+    return null
+  } catch (error) {
+    console.log("[v0] Anthropic error:", error)
+    return null
+  }
+}
+
+async function discoverWithGrok(prompt: string): Promise<any[] | null> {
+  const apiKey = process.env.XAI_API_KEY
+  if (!apiKey || !apiKey.startsWith("xai-")) {
+    console.log("[v0] Grok/xAI API key not available or invalid")
+    return null
+  }
+
+  try {
+    console.log("[v0] Trying Grok/xAI...")
+    const response = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "grok-beta",
+        messages: [
+          {
+            role: "system",
+            content: "You are a media research assistant. Return ONLY valid JSON arrays, no markdown or explanation.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.7,
+      }),
+    })
+
+    if (!response.ok) {
+      console.log("[v0] Grok API error:", response.status)
+      return null
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+    if (!content) return null
+
+    const jsonMatch = content.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0])
+      console.log("[v0] Grok returned", parsed.length, "outlets")
+      return parsed
+    }
+    return null
+  } catch (error) {
+    console.log("[v0] Grok error:", error)
+    return null
+  }
+}
+
+async function discoverWithGroq(prompt: string): Promise<any[] | null> {
+  const apiKey = process.env.GROQ_API_KEY
+  if (!apiKey || !apiKey.startsWith("gsk_")) {
+    console.log("[v0] Groq API key not available or invalid")
+    return null
+  }
+
+  try {
+    console.log("[v0] Trying Groq...")
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-70b-versatile",
+        messages: [
+          {
+            role: "system",
+            content: "You are a media research assistant. Return ONLY valid JSON arrays, no markdown or explanation.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      }),
+    })
+
+    if (!response.ok) {
+      console.log("[v0] Groq API error:", response.status)
+      return null
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+    if (!content) return null
+
+    const jsonMatch = content.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0])
+      console.log("[v0] Groq returned", parsed.length, "outlets")
+      return parsed
+    }
+    return null
+  } catch (error) {
+    console.log("[v0] Groq error:", error)
+    return null
+  }
+}
+
+async function discoverWithPerplexity(prompt: string): Promise<any[] | null> {
+  const apiKey = process.env.PERPLEXITY_API_KEY
+  if (!apiKey || !apiKey.startsWith("pplx-")) {
+    console.log("[v0] Perplexity API key not available or invalid")
+    return null
+  }
+
+  try {
+    console.log("[v0] Trying Perplexity...")
+    const response = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-sonar-small-128k-online",
+        messages: [
+          {
+            role: "system",
+            content: "You are a media research assistant. Return ONLY valid JSON arrays, no markdown or explanation.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      }),
+    })
+
+    if (!response.ok) {
+      console.log("[v0] Perplexity API error:", response.status)
+      return null
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+    if (!content) return null
+
+    const jsonMatch = content.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0])
+      console.log("[v0] Perplexity returned", parsed.length, "outlets")
+      return parsed
+    }
+    return null
+  } catch (error) {
+    console.log("[v0] Perplexity error:", error)
+    return null
+  }
+}
+
+async function discoverWithOpenRouter(prompt: string): Promise<any[] | null> {
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey || !apiKey.startsWith("sk-or-")) {
+    console.log("[v0] OpenRouter API key not available or invalid")
+    return null
+  }
+
+  try {
+    console.log("[v0] Trying OpenRouter...")
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "HTTP-Referer": "https://free-press-scores.com",
+        "X-Title": "Free Press Scores",
+      },
+      body: JSON.stringify({
+        model: "meta-llama/llama-3.1-8b-instruct:free",
+        messages: [
+          {
+            role: "system",
+            content: "You are a media research assistant. Return ONLY valid JSON arrays, no markdown or explanation.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      }),
+    })
+
+    if (!response.ok) {
+      console.log("[v0] OpenRouter API error:", response.status)
+      return null
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+    if (!content) return null
+
+    const jsonMatch = content.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0])
+      console.log("[v0] OpenRouter returned", parsed.length, "outlets")
+      return parsed
+    }
+    return null
+  } catch (error) {
+    console.log("[v0] OpenRouter error:", error)
+    return null
+  }
+}
+
+async function discoverWithSERP(query: string): Promise<any[] | null> {
+  const apiKey = process.env.SERP_API_KEY
+  if (!apiKey) {
+    console.log("[v0] SERP API key not available")
+    return null
+  }
+
+  try {
+    console.log("[v0] Trying SERP API web search...")
+    const searchUrl = `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${apiKey}&num=20`
+
+    const response = await fetch(searchUrl)
+    if (!response.ok) {
+      console.log("[v0] SERP API error:", response.status)
+      return null
+    }
+
+    const data = await response.json()
+    const results = data.organic_results || []
+
+    // Transform search results into outlet format
+    const outlets = results
+      .filter((r: any) => r.title && r.link)
+      .slice(0, 12)
+      .map((r: any) => ({
+        name: r.title
+          .replace(/ - .*$/, "")
+          .replace(/\|.*$/, "")
+          .trim(),
+        website: r.link,
+        description: r.snippet || "",
+        country: "Unknown",
+        mediaType: "print",
+        estimatedAudience: 1000000,
+      }))
+
+    console.log("[v0] SERP returned", outlets.length, "results")
+    return outlets.length > 0 ? outlets : null
+  } catch (error) {
+    console.log("[v0] SERP error:", error)
+    return null
+  }
+}
+
+async function discoverWithScrapingBEE(
+  country: string,
+  mediaTypes: string[],
+  minAudience: number,
+): Promise<any[] | null> {
+  const apiKey = process.env.SCRAPINGBEE_API_KEY
+  if (!apiKey) {
+    console.log("[v0] ScrapingBEE API key not available")
+    return null
+  }
+
+  try {
+    console.log("[v0] Trying ScrapingBEE to scrape media directories...")
+
+    // Scrape Wikipedia's list of news media for the country
+    const countryLabel = getCountryLabel(country)
+    const searchTerms =
+      countryLabel === "All Countries"
+        ? "List_of_news_media"
+        : `List_of_newspapers_in_${countryLabel.replace(/\s+/g, "_")}`
+
+    const targetUrl = `https://en.wikipedia.org/wiki/${searchTerms}`
+    const scrapingBeeUrl = `https://app.scrapingbee.com/api/v1/?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&render_js=false&extract_rules=${encodeURIComponent(
+      JSON.stringify({
+        outlets: {
+          selector: "table.wikitable tbody tr",
+          type: "list",
+          output: {
+            name: { selector: "td:first-child a", output: "@text" },
+            link: { selector: "td:first-child a", output: "@href" },
+          },
+        },
+      }),
+    )}`
+
+    const response = await fetch(scrapingBeeUrl)
+    if (!response.ok) {
+      console.log("[v0] ScrapingBEE error:", response.status)
+      return null
+    }
+
+    const data = await response.json()
+    const rawOutlets = data.outlets || []
+
+    // Transform scraped data into outlet format
+    const outlets = rawOutlets
+      .filter((o: any) => o.name && o.name.length > 2)
+      .slice(0, 15)
+      .map((o: any) => {
+        const mediaType = mediaTypes[0] || "print"
+        return {
+          name: o.name.trim(),
+          website: o.link?.startsWith("/wiki/")
+            ? `https://en.wikipedia.org${o.link}`
+            : o.link || `https://${o.name.toLowerCase().replace(/\s+/g, "")}.com`,
+          country: countryLabel === "All Countries" ? "United States" : countryLabel,
+          mediaType: mediaType,
+          estimatedAudience: minAudience,
+          description: `${o.name} - ${getMediaTypeLabel(mediaType)} media outlet from ${countryLabel}`,
+        }
+      })
+
+    console.log("[v0] ScrapingBEE returned", outlets.length, "results")
+    return outlets.length > 0 ? outlets : null
+  } catch (error) {
+    console.log("[v0] ScrapingBEE error:", error)
+    return null
+  }
+}
+
 export async function discoverNewOutlets(filters: DiscoveryFilters = {}): Promise<ScrapeResult[]> {
   console.log("[v0] Discovering new outlets with filters:", filters)
 
@@ -60,195 +476,513 @@ export async function discoverNewOutlets(filters: DiscoveryFilters = {}): Promis
 
   // Get existing outlet names for duplicate checking
   const existingNames = new Set(existingOutlets.map((o) => o.name.toLowerCase().trim()))
+  const existingNamesList = Array.from(existingNames).slice(0, 50).join(", ")
 
   const results: ScrapeResult[] = []
-  let geminiWorked = false
 
-  const geminiApiKey = process.env.GEMINI_API_KEY
-  const isValidGeminiKey =
-    geminiApiKey && geminiApiKey.length > 30 && geminiApiKey.startsWith("AIza") && !geminiApiKey.includes("client")
+  // Build the AI prompt
+  const countryLabel = getCountryLabel(country)
+  const mediaTypeLabels = mediaTypes.map(getMediaTypeLabel).join(", ")
+  const audienceLabel = formatAudienceForPrompt(minAudience)
 
-  if (isValidGeminiKey) {
-    try {
-      const countryLabel = getCountryLabel(country)
-      const mediaTypeLabels = mediaTypes.map(getMediaTypeLabel).join(", ")
-      const audienceLabel = formatAudienceForPrompt(minAudience)
+  const prompt = `Find ${outletsToFind} real news media outlets matching these criteria:
+- Region: ${countryLabel}
+- Media types: ${mediaTypeLabels}
+- Minimum audience: ${audienceLabel}+ monthly viewers/readers
 
-      const prompt = `List ${outletsToFind} real, well-known media outlets from ${countryLabel} that are ${mediaTypeLabels} with at least ${audienceLabel} monthly viewers/readers. 
+EXCLUDE these existing outlets: ${existingNamesList}
 
-For each outlet, provide in this exact JSON format:
+Return ONLY a JSON array with this exact format:
 [
   {
     "name": "Outlet Name",
     "website": "https://example.com",
     "country": "Country Name",
     "mediaType": "tv|print|radio|podcast|social|legacy",
-    "estimatedAudience": 5000000,
-    "description": "Brief description of the outlet and what they cover"
+    "estimatedAudience": 1000000,
+    "description": "Brief description"
   }
 ]
 
-Only include real, verifiable media outlets. Return valid JSON array only, no other text.`
+Return ONLY the JSON array, no other text.`
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiApiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-          }),
-        },
-      )
+  let discoveredOutlets: any[] | null = null
+  let aiSource = "curated list"
 
-      if (response.ok) {
-        const data = await response.json()
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ""
-
-        // Extract JSON array from response
-        const jsonMatch = text.match(/\[[\s\S]*\]/)
-        if (jsonMatch) {
-          try {
-            const outlets = JSON.parse(jsonMatch[0])
-
-            for (const outlet of outlets) {
-              if (!outlet.name) continue
-
-              const normalizedName = outlet.name.toLowerCase().trim()
-              const isDuplicate =
-                outletExists(outlet.name) ||
-                existingNames.has(normalizedName) ||
-                Array.from(existingNames).some(
-                  (existing) => existing.includes(normalizedName) || normalizedName.includes(existing),
-                )
-
-              if (!isDuplicate) {
-                const newOutlet = createOutletFromDiscovery(outlet, country, mediaTypes[0], minAudience)
-                addOutlet(newOutlet)
-                existingNames.add(normalizedName)
-              }
-
-              results.push({
-                outletId: outlet.name.toLowerCase().replace(/\s+/g, "-"),
-                success: !isDuplicate,
-                data: {
-                  name: outlet.name,
-                  website: outlet.website,
-                  country: outlet.country || countryLabel,
-                  mediaType: outlet.mediaType || mediaTypes[0],
-                  estimatedAudience: outlet.estimatedAudience || minAudience,
-                  description: outlet.description || `${outlet.name} is a media outlet.`,
-                },
-                error: isDuplicate ? `"${outlet.name}" already exists in database` : undefined,
-              })
-            }
-
-            if (results.length > 0) {
-              geminiWorked = true
-              console.log(`[v0] Gemini discovered ${results.length} outlets`)
-            }
-          } catch (parseError) {
-            console.error("[v0] Failed to parse Gemini response:", parseError)
-          }
-        }
-      } else {
-        console.log("[v0] Gemini API returned non-OK status, using fallback outlets")
-      }
-    } catch (error) {
-      console.log("[v0] Gemini discovery error, using fallback outlets:", error)
-    }
-  } else {
-    console.log("[v0] No valid Gemini API key, using fallback outlets")
+  // 1. OpenAI GPT-4
+  discoveredOutlets = await discoverWithOpenAI(prompt)
+  if (discoveredOutlets) {
+    aiSource = "OpenAI GPT-4"
   }
 
-  // If Gemini didn't work or didn't get enough results, use curated fallback list
-  if (!geminiWorked || results.length < outletsToFind) {
-    console.log("[v0] Using fallback outlets list")
-    const fallbackOutlets = getFallbackOutlets(country, mediaTypes, minAudience, existingNames)
-
-    for (const outlet of fallbackOutlets) {
-      if (results.length >= outletsToFind) break
-
-      const normalizedName = outlet.name.toLowerCase().trim()
-      const isDuplicate =
-        outletExists(outlet.name) ||
-        existingNames.has(normalizedName) ||
-        Array.from(existingNames).some(
-          (existing) => existing.includes(normalizedName) || normalizedName.includes(existing),
-        )
-
-      if (!isDuplicate) {
-        const newOutlet = createOutletFromDiscovery(outlet, country, mediaTypes[0], minAudience)
-        addOutlet(newOutlet)
-        existingNames.add(normalizedName)
-      }
-
-      results.push({
-        outletId: outlet.name.toLowerCase().replace(/\s+/g, "-"),
-        success: !isDuplicate,
-        data: outlet,
-        error: isDuplicate ? `"${outlet.name}" already exists in database` : undefined,
-      })
+  // 2. Anthropic Claude
+  if (!discoveredOutlets) {
+    discoveredOutlets = await discoverWithAnthropic(prompt)
+    if (discoveredOutlets) {
+      aiSource = "Anthropic Claude"
     }
+  }
+
+  // 3. Grok/xAI
+  if (!discoveredOutlets) {
+    discoveredOutlets = await discoverWithGrok(prompt)
+    if (discoveredOutlets) {
+      aiSource = "Grok/xAI"
+    }
+  }
+
+  // 4. Groq (fast inference)
+  if (!discoveredOutlets) {
+    discoveredOutlets = await discoverWithGroq(prompt)
+    if (discoveredOutlets) {
+      aiSource = "Groq"
+    }
+  }
+
+  // 5. Perplexity (web-connected)
+  if (!discoveredOutlets) {
+    discoveredOutlets = await discoverWithPerplexity(prompt)
+    if (discoveredOutlets) {
+      aiSource = "Perplexity"
+    }
+  }
+
+  // 6. OpenRouter (many models)
+  if (!discoveredOutlets) {
+    discoveredOutlets = await discoverWithOpenRouter(prompt)
+    if (discoveredOutlets) {
+      aiSource = "OpenRouter"
+    }
+  }
+
+  // 7. SERP API web search
+  if (!discoveredOutlets) {
+    const searchQuery = `${mediaTypeLabels} news media outlets ${countryLabel} ${audienceLabel} audience`
+    discoveredOutlets = await discoverWithSERP(searchQuery)
+    if (discoveredOutlets) {
+      aiSource = "SERP API"
+    }
+  }
+
+  // 8. ScrapingBEE (scrape media directories)
+  if (!discoveredOutlets) {
+    discoveredOutlets = await discoverWithScrapingBEE(country, mediaTypes, minAudience)
+    if (discoveredOutlets) {
+      aiSource = "ScrapingBEE"
+    }
+  }
+
+  // 9. Curated fallback list
+  if (!discoveredOutlets) {
+    console.log("[v0] All AI providers failed, using curated fallback list")
+    discoveredOutlets = getFallbackOutlets(country, mediaTypes, minAudience, existingNames)
+    aiSource = "curated list"
+  }
+
+  console.log(`[v0] Using results from: ${aiSource}`)
+
+  // Process discovered outlets
+  for (const outlet of discoveredOutlets) {
+    if (results.length >= outletsToFind) break
+
+    const normalizedName = (outlet.name || "").toLowerCase().trim()
+    if (!normalizedName) continue
+
+    const isDuplicate =
+      outletExists(outlet.name) ||
+      existingNames.has(normalizedName) ||
+      Array.from(existingNames).some(
+        (existing) => existing.includes(normalizedName) || normalizedName.includes(existing),
+      )
+
+    if (!isDuplicate) {
+      const newOutlet = createOutletFromDiscovery(outlet, country, mediaTypes[0], minAudience)
+      addOutlet(newOutlet)
+      existingNames.add(normalizedName)
+    }
+
+    results.push({
+      outletId: outlet.name.toLowerCase().replace(/\s+/g, "-"),
+      success: !isDuplicate,
+      data: {
+        ...outlet,
+        source: aiSource,
+      },
+      error: isDuplicate ? `"${outlet.name}" already exists in database` : undefined,
+    })
   }
 
   // Simulate processing time
-  await new Promise((resolve) => setTimeout(resolve, 1500))
+  await new Promise((resolve) => setTimeout(resolve, 500))
 
   console.log(
-    `[v0] Discovery complete: ${results.filter((r) => r.success).length} added, ${results.filter((r) => !r.success).length} duplicates`,
+    `[v0] Discovery complete via ${aiSource}: ${results.filter((r) => r.success).length} added, ${results.filter((r) => !r.success).length} duplicates`,
   )
   return results
 }
 
-// Helper function to get country label
-function getCountryLabel(value: string): string {
-  const countries: Record<string, string> = {
-    all: "worldwide",
-    us: "United States",
-    uk: "United Kingdom",
-    canada: "Canada",
-    australia: "Australia",
-    germany: "Germany",
-    france: "France",
-    spain: "Spain",
-    italy: "Italy",
-    japan: "Japan",
-    india: "India",
-    brazil: "Brazil",
-    mexico: "Mexico",
-    argentina: "Argentina",
-    "middle-east": "Middle East",
-    africa: "Africa",
-    "asia-pacific": "Asia Pacific",
-    "latin-america": "Latin America",
-    europe: "Europe",
+// Scrape ownership data
+export async function scrapeOwnershipData(outlets: Array<{ id: string; name: string }>): Promise<ScrapeResult[]> {
+  console.log(
+    "[v0] Scraping ownership data for outlets:",
+    outlets.map((o) => o.name),
+  )
+  const results = []
+
+  for (const outlet of outlets) {
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    results.push({
+      outletId: outlet.id,
+      success: true,
+      data: { ownership: "Simulated ownership data" },
+    })
   }
-  return countries[value] || value
+
+  return results
 }
 
-// Helper function to get media type label
-function getMediaTypeLabel(id: string): string {
-  const types: Record<string, string> = {
-    tv: "Television",
-    print: "Print/Newspaper",
-    radio: "Radio",
-    podcast: "Podcast",
-    social: "Social Media/Influencer",
-    legacy: "Legacy/Wire Service",
+// Scrape funding data
+export async function scrapeFundingData(outlets: Array<{ id: string; name: string }>): Promise<ScrapeResult[]> {
+  console.log(
+    "[v0] Scraping funding data for outlets:",
+    outlets.map((o) => o.name),
+  )
+  const results = []
+
+  for (const outlet of outlets) {
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    results.push({
+      outletId: outlet.id,
+      success: true,
+      data: { funding: "Simulated funding data" },
+    })
   }
-  return types[id] || id
+
+  return results
 }
 
-// Helper function to format audience for prompt
-function formatAudienceForPrompt(num: number): string {
-  if (num >= 1000000000) return `${(num / 1000000000).toFixed(1)} billion`
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)} million`
-  if (num >= 1000) return `${(num / 1000).toFixed(0)} thousand`
-  return num.toString()
+// Scrape legal cases
+export async function scrapeLegalCases(outlets: Array<{ id: string; name: string }>): Promise<ScrapeResult[]> {
+  console.log(
+    "[v0] Scraping legal cases for outlets:",
+    outlets.map((o) => o.name),
+  )
+  const results = []
+
+  for (const outlet of outlets) {
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    results.push({
+      outletId: outlet.id,
+      success: true,
+      data: { legalCases: "Simulated legal data" },
+    })
+  }
+
+  return results
 }
 
-// Fallback outlets when Gemini isn't available
+// Scrape accountability data
+export async function scrapeAccountabilityData(
+  outlets: Array<{ id: string; name: string; website?: string }>,
+): Promise<ScrapeResult[]> {
+  console.log(
+    "[v0] Scraping accountability data for outlets:",
+    outlets.map((o) => o.name),
+  )
+  const results = []
+
+  for (const outlet of outlets) {
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    results.push({
+      outletId: outlet.id,
+      success: true,
+      data: { accountability: "Simulated accountability data" },
+    })
+  }
+
+  return results
+}
+
+export async function mergeDuplicateOutlets(
+  outlets: Array<{ id: string; name: string; website?: string }>,
+): Promise<ScrapeResult[]> {
+  console.log("[v0] Identifying duplicate outlets...")
+  const results = []
+  const seen = new Map<string, { id: string; name: string }>()
+  const duplicates: Array<[string, string]> = []
+
+  // Identify potential duplicates based on name similarity
+  for (const outlet of outlets) {
+    const normalizedName = outlet.name
+      .toLowerCase()
+      .replace(/[^\w\s]/g, "")
+      .trim()
+
+    if (seen.has(normalizedName)) {
+      const original = seen.get(normalizedName)!
+      duplicates.push([original.id, outlet.id])
+      console.log(`[v0] Found duplicate: ${original.name} matches ${outlet.name}`)
+    } else {
+      seen.set(normalizedName, outlet)
+    }
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 2000))
+
+  results.push({
+    outletId: "merge-summary",
+    success: true,
+    data: {
+      message: `Found ${duplicates.length} potential duplicates`,
+      duplicates: duplicates.length,
+      merged: Math.min(duplicates.length, 5), // Simulating merge of first 5
+    },
+  })
+
+  return results
+}
+
+export async function updateOutletLogos(
+  outlets: Array<{ id: string; name: string; website?: string }>,
+): Promise<ScrapeResult[]> {
+  console.log(
+    "[v0] Updating logos for outlets:",
+    outlets.map((o) => o.name),
+  )
+  const results = []
+
+  for (const outlet of outlets) {
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+
+    try {
+      // Try multiple sources in order of priority
+      let logoUrl: string | null = null
+      let source = "unknown"
+
+      // 1. Try BrandsOfTheWorld.com first (best quality)
+      const botw = await scrapeBrandsOfTheWorld(outlet.name)
+      if (botw) {
+        logoUrl = botw
+        source = "brandsoftheworld.com"
+      }
+
+      // 2. Fallback to Gemini AI
+      if (!logoUrl && process.env.GEMINI_API_KEY) {
+        const geminiResult = await scrapeLogoWithGemini(outlet.name, outlet.website)
+        if (geminiResult) {
+          logoUrl = geminiResult
+          source = "Gemini AI"
+        }
+      }
+
+      // 3. Fallback to ScrapingBee on outlet website
+      if (!logoUrl && outlet.website && process.env.SCRAPINGBEE_API_KEY) {
+        const scrapingResult = await scrapeLogoWithScrapingBee(outlet.website)
+        if (scrapingResult) {
+          logoUrl = scrapingResult
+          source = outlet.website
+        }
+      }
+
+      // 4. Final fallback to placeholder
+      if (!logoUrl) {
+        logoUrl = `/placeholder.svg?height=100&width=100&query=${encodeURIComponent(outlet.name + " logo")}`
+        source = "Generated placeholder"
+      }
+
+      results.push({
+        outletId: outlet.id,
+        success: !!logoUrl,
+        data: {
+          logo: logoUrl,
+          source: source,
+          outlet: outlet.name,
+        },
+      })
+    } catch (error) {
+      results.push({
+        outletId: outlet.id,
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      })
+    }
+  }
+
+  return results
+}
+
+async function scrapeBrandsOfTheWorld(brandName: string): Promise<string | null> {
+  try {
+    // Clean brand name for search
+    const searchQuery = brandName
+      .toLowerCase()
+      .replace(/[^\w\s]/g, " ")
+      .trim()
+    const searchUrl = `https://www.brandsoftheworld.com/search/logo?search_api_fulltext=${encodeURIComponent(searchQuery)}`
+
+    if (!process.env.SCRAPINGBEE_API_KEY) {
+      console.log("[v0] No ScrapingBee API key for BrandsOfTheWorld scraping")
+      return null
+    }
+
+    const response = await fetch(
+      `https://app.scrapingbee.com/api/v1/?api_key=${process.env.SCRAPINGBEE_API_KEY}&url=${encodeURIComponent(searchUrl)}&render_js=false`,
+    )
+
+    if (!response.ok) {
+      console.log("[v0] BrandsOfTheWorld scrape failed:", response.status)
+      return null
+    }
+
+    const html = await response.text()
+
+    // Extract logo image URL from search results
+    // Look for img tags with brand logos
+    const imgMatch = html.match(/<img[^>]+src=["']([^"']+(?:logo|brand)[^"']+\.(?:png|svg|jpg|jpeg))["']/i)
+    if (imgMatch && imgMatch[1]) {
+      let logoUrl = imgMatch[1]
+      // Ensure absolute URL
+      if (logoUrl.startsWith("//")) {
+        logoUrl = "https:" + logoUrl
+      } else if (logoUrl.startsWith("/")) {
+        logoUrl = "https://www.brandsoftheworld.com" + logoUrl
+      }
+      console.log("[v0] Found logo on BrandsOfTheWorld:", logoUrl)
+      return logoUrl
+    }
+
+    return null
+  } catch (error) {
+    console.log("[v0] Error scraping BrandsOfTheWorld:", error)
+    return null
+  }
+}
+
+async function scrapeLogoWithGemini(brandName: string, website?: string): Promise<string | null> {
+  try {
+    const prompt = `Find the official logo URL for the media outlet "${brandName}"${website ? ` (website: ${website})` : ""}. Return ONLY the direct image URL, nothing else.`
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      },
+    )
+
+    if (!response.ok) return null
+
+    const data = await response.json()
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+
+    // Extract URL from response
+    const urlMatch = text?.match(/https?:\/\/[^\s]+\.(?:png|svg|jpg|jpeg)/i)
+    if (urlMatch) {
+      console.log("[v0] Gemini found logo:", urlMatch[0])
+      return urlMatch[0]
+    }
+
+    return null
+  } catch (error) {
+    console.log("[v0] Error with Gemini logo search:", error)
+    return null
+  }
+}
+
+async function scrapeLogoWithScrapingBee(websiteUrl: string): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `https://app.scrapingbee.com/api/v1/?api_key=${process.env.SCRAPINGBEE_API_KEY}&url=${encodeURIComponent(websiteUrl)}&render_js=false`,
+    )
+
+    if (!response.ok) return null
+
+    const html = await response.text()
+
+    // Look for logo in common locations
+    const patterns = [
+      /<img[^>]+class=["'][^"']*logo[^"']*["'][^>]+src=["']([^"']+)["']/i,
+      /<img[^>]+src=["']([^"']+logo[^"']+)["']/i,
+      /<link[^>]+rel=["']icon["'][^>]+href=["']([^"']+)["']/i,
+    ]
+
+    for (const pattern of patterns) {
+      const match = html.match(pattern)
+      if (match && match[1]) {
+        let logoUrl = match[1]
+        // Ensure absolute URL
+        if (logoUrl.startsWith("//")) {
+          logoUrl = "https:" + logoUrl
+        } else if (logoUrl.startsWith("/")) {
+          const baseUrl = new URL(websiteUrl).origin
+          logoUrl = baseUrl + logoUrl
+        }
+        console.log("[v0] Found logo on website:", logoUrl)
+        return logoUrl
+      }
+    }
+
+    return null
+  } catch (error) {
+    console.log("[v0] Error scraping website for logo:", error)
+    return null
+  }
+}
+
+function createOutletFromDiscovery(
+  data: {
+    name: string
+    website?: string
+    country?: string
+    mediaType?: string
+    estimatedAudience?: number
+    description?: string
+  },
+  defaultCountry: string,
+  defaultMediaType: string,
+  defaultAudience: number,
+): MediaOutlet {
+  const id = data.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+  const audience = data.estimatedAudience || defaultAudience
+  const audienceStr = audience >= 1000000 ? `${(audience / 1000000).toFixed(1)}M` : `${(audience / 1000).toFixed(0)}K`
+
+  return {
+    id,
+    name: data.name,
+    country: data.country || getCountryLabel(defaultCountry),
+    biasScore: 0, // Neutral by default, to be researched
+    freePressScore: 50, // Average by default, to be researched
+    logo: `/placeholder.svg?height=80&width=80&query=${encodeURIComponent(data.name + " logo")}`,
+    description: data.description || `${data.name} is a media outlet.`,
+    ownership: "Unknown - To be researched",
+    funding: ["Unknown"],
+    website: data.website || "",
+    outletType: data.mediaType === "social" ? "influencer" : "traditional",
+    metrics: {
+      type: (data.mediaType || defaultMediaType) as "tv" | "print" | "radio" | "podcast" | "social" | "legacy",
+      avgMonthlyAudience: audienceStr,
+    },
+    factCheckAccuracy: 50,
+    editorialIndependence: 50,
+    transparency: 50,
+    perspectives: "moderate",
+    stakeholders: [],
+    boardMembers: [],
+    retractions: [],
+    lawsuits: [],
+    scandals: [],
+    sponsors: [],
+  }
+}
+
+// Fallback outlets when AI isn't available
 function getFallbackOutlets(
   country: string,
   mediaTypes: string[],
@@ -527,363 +1261,49 @@ function getFallbackOutlets(
   })
 }
 
-// Scrape ownership data
-export async function scrapeOwnershipData(outlets: Array<{ id: string; name: string }>): Promise<ScrapeResult[]> {
-  console.log(
-    "[v0] Scraping ownership data for outlets:",
-    outlets.map((o) => o.name),
-  )
-  const results = []
-
-  for (const outlet of outlets) {
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    results.push({
-      outletId: outlet.id,
-      success: true,
-      data: { ownership: "Simulated ownership data" },
-    })
+// Helper function to get country label
+function getCountryLabel(value: string): string {
+  const countries: Record<string, string> = {
+    all: "worldwide",
+    us: "United States",
+    uk: "United Kingdom",
+    canada: "Canada",
+    australia: "Australia",
+    germany: "Germany",
+    france: "France",
+    spain: "Spain",
+    italy: "Italy",
+    japan: "Japan",
+    india: "India",
+    brazil: "Brazil",
+    mexico: "Mexico",
+    argentina: "Argentina",
+    "middle-east": "Middle East",
+    africa: "Africa",
+    "asia-pacific": "Asia Pacific",
+    "latin-america": "Latin America",
+    europe: "Europe",
   }
-
-  return results
+  return countries[value] || value
 }
 
-// Scrape funding data
-export async function scrapeFundingData(outlets: Array<{ id: string; name: string }>): Promise<ScrapeResult[]> {
-  console.log(
-    "[v0] Scraping funding data for outlets:",
-    outlets.map((o) => o.name),
-  )
-  const results = []
-
-  for (const outlet of outlets) {
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    results.push({
-      outletId: outlet.id,
-      success: true,
-      data: { funding: "Simulated funding data" },
-    })
+// Helper function to get media type label
+function getMediaTypeLabel(id: string): string {
+  const types: Record<string, string> = {
+    tv: "Television",
+    print: "Print/Newspaper",
+    radio: "Radio",
+    podcast: "Podcast",
+    social: "Social Media/Influencer",
+    legacy: "Legacy/Wire Service",
   }
-
-  return results
+  return types[id] || id
 }
 
-// Scrape legal cases
-export async function scrapeLegalCases(outlets: Array<{ id: string; name: string }>): Promise<ScrapeResult[]> {
-  console.log(
-    "[v0] Scraping legal cases for outlets:",
-    outlets.map((o) => o.name),
-  )
-  const results = []
-
-  for (const outlet of outlets) {
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    results.push({
-      outletId: outlet.id,
-      success: true,
-      data: { legalCases: "Simulated legal data" },
-    })
-  }
-
-  return results
-}
-
-// Scrape accountability data
-export async function scrapeAccountabilityData(
-  outlets: Array<{ id: string; name: string; website?: string }>,
-): Promise<ScrapeResult[]> {
-  console.log(
-    "[v0] Scraping accountability data for outlets:",
-    outlets.map((o) => o.name),
-  )
-  const results = []
-
-  for (const outlet of outlets) {
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    results.push({
-      outletId: outlet.id,
-      success: true,
-      data: { accountability: "Simulated accountability data" },
-    })
-  }
-
-  return results
-}
-
-export async function mergeDuplicateOutlets(
-  outlets: Array<{ id: string; name: string; website?: string }>,
-): Promise<ScrapeResult[]> {
-  console.log("[v0] Identifying duplicate outlets...")
-  const results = []
-  const seen = new Map<string, { id: string; name: string }>()
-  const duplicates: Array<[string, string]> = []
-
-  // Identify potential duplicates based on name similarity
-  for (const outlet of outlets) {
-    const normalizedName = outlet.name
-      .toLowerCase()
-      .replace(/[^\w\s]/g, "")
-      .trim()
-
-    if (seen.has(normalizedName)) {
-      const original = seen.get(normalizedName)!
-      duplicates.push([original.id, outlet.id])
-      console.log(`[v0] Found duplicate: ${original.name} matches ${outlet.name}`)
-    } else {
-      seen.set(normalizedName, outlet)
-    }
-  }
-
-  await new Promise((resolve) => setTimeout(resolve, 2000))
-
-  results.push({
-    outletId: "merge-summary",
-    success: true,
-    data: {
-      message: `Found ${duplicates.length} potential duplicates`,
-      duplicates: duplicates.length,
-      merged: Math.min(duplicates.length, 5), // Simulating merge of first 5
-    },
-  })
-
-  return results
-}
-
-export async function updateOutletLogos(
-  outlets: Array<{ id: string; name: string; website?: string }>,
-): Promise<ScrapeResult[]> {
-  console.log(
-    "[v0] Updating logos for outlets:",
-    outlets.map((o) => o.name),
-  )
-  const results = []
-
-  for (const outlet of outlets) {
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-
-    try {
-      // Try multiple sources in order of priority
-      let logoUrl: string | null = null
-      let source = "unknown"
-
-      // 1. Try BrandsOfTheWorld.com first (best quality)
-      const botw = await scrapeBrandsOfTheWorld(outlet.name)
-      if (botw) {
-        logoUrl = botw
-        source = "brandsoftheworld.com"
-      }
-
-      // 2. Fallback to Gemini AI
-      if (!logoUrl && process.env.GEMINI_API_KEY) {
-        const geminiResult = await scrapeLogoWithGemini(outlet.name, outlet.website)
-        if (geminiResult) {
-          logoUrl = geminiResult
-          source = "Gemini AI"
-        }
-      }
-
-      // 3. Fallback to ScrapingBee on outlet website
-      if (!logoUrl && outlet.website && process.env.SCRAPINGBEE_API_KEY) {
-        const scrapingResult = await scrapeLogoWithScrapingBee(outlet.website)
-        if (scrapingResult) {
-          logoUrl = scrapingResult
-          source = outlet.website
-        }
-      }
-
-      // 4. Final fallback to placeholder
-      if (!logoUrl) {
-        logoUrl = `/placeholder.svg?height=100&width=100&query=${encodeURIComponent(outlet.name + " logo")}`
-        source = "Generated placeholder"
-      }
-
-      results.push({
-        outletId: outlet.id,
-        success: !!logoUrl,
-        data: {
-          logo: logoUrl,
-          source: source,
-          outlet: outlet.name,
-        },
-      })
-    } catch (error) {
-      results.push({
-        outletId: outlet.id,
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      })
-    }
-  }
-
-  return results
-}
-
-async function scrapeBrandsOfTheWorld(brandName: string): Promise<string | null> {
-  try {
-    // Clean brand name for search
-    const searchQuery = brandName
-      .toLowerCase()
-      .replace(/[^\w\s]/g, " ")
-      .trim()
-    const searchUrl = `https://www.brandsoftheworld.com/search/logo?search_api_fulltext=${encodeURIComponent(searchQuery)}`
-
-    if (!process.env.SCRAPINGBEE_API_KEY) {
-      console.log("[v0] No ScrapingBee API key for BrandsOfTheWorld scraping")
-      return null
-    }
-
-    const response = await fetch(
-      `https://app.scrapingbee.com/api/v1/?api_key=${process.env.SCRAPINGBEE_API_KEY}&url=${encodeURIComponent(searchUrl)}&render_js=false`,
-    )
-
-    if (!response.ok) {
-      console.log("[v0] BrandsOfTheWorld scrape failed:", response.status)
-      return null
-    }
-
-    const html = await response.text()
-
-    // Extract logo image URL from search results
-    // Look for img tags with brand logos
-    const imgMatch = html.match(/<img[^>]+src=["']([^"']+(?:logo|brand)[^"']+\.(?:png|svg|jpg|jpeg))["']/i)
-    if (imgMatch && imgMatch[1]) {
-      let logoUrl = imgMatch[1]
-      // Ensure absolute URL
-      if (logoUrl.startsWith("//")) {
-        logoUrl = "https:" + logoUrl
-      } else if (logoUrl.startsWith("/")) {
-        logoUrl = "https://www.brandsoftheworld.com" + logoUrl
-      }
-      console.log("[v0] Found logo on BrandsOfTheWorld:", logoUrl)
-      return logoUrl
-    }
-
-    return null
-  } catch (error) {
-    console.log("[v0] Error scraping BrandsOfTheWorld:", error)
-    return null
-  }
-}
-
-async function scrapeLogoWithGemini(brandName: string, website?: string): Promise<string | null> {
-  try {
-    const prompt = `Find the official logo URL for the media outlet "${brandName}"${website ? ` (website: ${website})` : ""}. Return ONLY the direct image URL, nothing else.`
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-        }),
-      },
-    )
-
-    if (!response.ok) return null
-
-    const data = await response.json()
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-
-    // Extract URL from response
-    const urlMatch = text?.match(/https?:\/\/[^\s]+\.(?:png|svg|jpg|jpeg)/i)
-    if (urlMatch) {
-      console.log("[v0] Gemini found logo:", urlMatch[0])
-      return urlMatch[0]
-    }
-
-    return null
-  } catch (error) {
-    console.log("[v0] Error with Gemini logo search:", error)
-    return null
-  }
-}
-
-async function scrapeLogoWithScrapingBee(websiteUrl: string): Promise<string | null> {
-  try {
-    const response = await fetch(
-      `https://app.scrapingbee.com/api/v1/?api_key=${process.env.SCRAPINGBEE_API_KEY}&url=${encodeURIComponent(websiteUrl)}&render_js=false`,
-    )
-
-    if (!response.ok) return null
-
-    const html = await response.text()
-
-    // Look for logo in common locations
-    const patterns = [
-      /<img[^>]+class=["'][^"']*logo[^"']*["'][^>]+src=["']([^"']+)["']/i,
-      /<img[^>]+src=["']([^"']+logo[^"']+)["']/i,
-      /<link[^>]+rel=["']icon["'][^>]+href=["']([^"']+)["']/i,
-    ]
-
-    for (const pattern of patterns) {
-      const match = html.match(pattern)
-      if (match && match[1]) {
-        let logoUrl = match[1]
-        // Ensure absolute URL
-        if (logoUrl.startsWith("//")) {
-          logoUrl = "https:" + logoUrl
-        } else if (logoUrl.startsWith("/")) {
-          const baseUrl = new URL(websiteUrl).origin
-          logoUrl = baseUrl + logoUrl
-        }
-        console.log("[v0] Found logo on website:", logoUrl)
-        return logoUrl
-      }
-    }
-
-    return null
-  } catch (error) {
-    console.log("[v0] Error scraping website for logo:", error)
-    return null
-  }
-}
-
-function createOutletFromDiscovery(
-  data: {
-    name: string
-    website?: string
-    country?: string
-    mediaType?: string
-    estimatedAudience?: number
-    description?: string
-  },
-  defaultCountry: string,
-  defaultMediaType: string,
-  defaultAudience: number,
-): MediaOutlet {
-  const id = data.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-  const audience = data.estimatedAudience || defaultAudience
-  const audienceStr = audience >= 1000000 ? `${(audience / 1000000).toFixed(1)}M` : `${(audience / 1000).toFixed(0)}K`
-
-  return {
-    id,
-    name: data.name,
-    country: data.country || getCountryLabel(defaultCountry),
-    biasScore: 0, // Neutral by default, to be researched
-    freePressScore: 50, // Average by default, to be researched
-    logo: `/placeholder.svg?height=80&width=80&query=${encodeURIComponent(data.name + " logo")}`,
-    description: data.description || `${data.name} is a media outlet.`,
-    ownership: "Unknown - To be researched",
-    funding: ["Unknown"],
-    website: data.website || "",
-    outletType: data.mediaType === "social" ? "influencer" : "traditional",
-    metrics: {
-      type: (data.mediaType || defaultMediaType) as "tv" | "print" | "radio" | "podcast" | "social" | "legacy",
-      avgMonthlyAudience: audienceStr,
-    },
-    factCheckAccuracy: 50,
-    editorialIndependence: 50,
-    transparency: 50,
-    perspectives: "moderate",
-    stakeholders: [],
-    boardMembers: [],
-    retractions: [],
-    lawsuits: [],
-    scandals: [],
-    sponsors: [],
-  }
+// Helper function to format audience for prompt
+function formatAudienceForPrompt(num: number): string {
+  if (num >= 1000000000) return `${(num / 1000000000).toFixed(1)} billion`
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)} million`
+  if (num >= 1000) return `${(num / 1000).toFixed(0)} thousand`
+  return num.toString()
 }

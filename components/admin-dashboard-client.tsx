@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -48,7 +47,11 @@ interface AdminDashboardClientProps {
   }>
 }
 
-export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets }: AdminDashboardClientProps) {
+export function AdminDashboardClient({
+  hasApiKey,
+  totalOutlets: initialTotalOutlets,
+  scrapableOutlets,
+}: AdminDashboardClientProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -58,6 +61,42 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
   const [progress, setProgress] = useState(0)
   const [results, setResults] = useState<ScrapeResult[]>([])
   const [activeOperation, setActiveOperation] = useState<string | null>(null)
+
+  const [currentOutletCount, setCurrentOutletCount] = useState(initialTotalOutlets)
+  const [scrapableCount, setScrapableCount] = useState(scrapableOutlets.length)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const refreshAllStats = async () => {
+    setIsRefreshing(true)
+    try {
+      const response = await fetch("/api/outlets/stats", { cache: "no-store" })
+      if (response.ok) {
+        const data = await response.json()
+        setCurrentOutletCount(data.totalOutlets)
+        setScrapableCount(data.scrapable)
+      }
+    } catch (error) {
+      console.error("Error refreshing stats:", error)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  const refreshOutletCount = async () => {
+    try {
+      const response = await fetch("/api/outlets/count", { cache: "no-store" })
+      if (response.ok) {
+        const data = await response.json()
+        setCurrentOutletCount(data.count)
+      }
+    } catch (error) {
+      console.error("Error refreshing outlet count:", error)
+    }
+  }
+
+  useEffect(() => {
+    refreshAllStats()
+  }, [])
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
@@ -75,6 +114,8 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
     setActiveOperation("discover")
     setProgress(0)
     setResults([])
+
+    console.log("[v0] Starting discover new outlets operation with filters:", filters)
 
     try {
       const response = await fetch("/api/scrape/discover", {
@@ -122,6 +163,8 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
         setResults([{ outletId: "error", success: false, error: data.error }])
         setProgress(100)
       }
+
+      await refreshAllStats()
 
       const totalAdded = discoveredOutlets.filter((o) => o.status === "added").length
       const totalDuplicates = discoveredOutlets.filter((o) => o.status === "duplicate").length
@@ -325,9 +368,15 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
           <h1 className="mb-2 text-3xl font-bold text-foreground">Admin Dashboard</h1>
           <p className="text-muted-foreground">Manage data scraping and updates for media outlets</p>
         </div>
-        <Button variant="outline" onClick={() => setIsAuthenticated(false)}>
-          Logout
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={refreshAllStats} disabled={isRefreshing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+            {isRefreshing ? "Refreshing..." : "Refresh"}
+          </Button>
+          <Button variant="outline" onClick={() => setIsAuthenticated(false)}>
+            Logout
+          </Button>
+        </div>
       </div>
 
       {/* Stats Overview */}
@@ -337,7 +386,7 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
             <Database className="h-5 w-5 text-muted-foreground" />
             <span className="text-sm font-medium text-muted-foreground">Total Outlets</span>
           </div>
-          <div className="text-3xl font-bold text-foreground">{totalOutlets}</div>
+          <div className="text-3xl font-bold text-foreground">{currentOutletCount}</div>
         </Card>
 
         <Card className="p-6">
@@ -345,7 +394,7 @@ export function AdminDashboardClient({ hasApiKey, totalOutlets, scrapableOutlets
             <RefreshCw className="h-5 w-5 text-muted-foreground" />
             <span className="text-sm font-medium text-muted-foreground">Scrapable</span>
           </div>
-          <div className="text-3xl font-bold text-foreground">{scrapableOutlets.length}</div>
+          <div className="text-3xl font-bold text-foreground">{scrapableCount}</div>
         </Card>
 
         <Card className="p-6">
