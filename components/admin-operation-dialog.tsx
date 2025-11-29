@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Progress } from "@/components/ui/progress"
+import { cn } from "@/lib/utils" // Fixed import path for cn utility
 import {
   RefreshCw,
   CheckCircle2,
@@ -149,15 +150,26 @@ const OPERATION_CONFIGS: Record<OperationType, OperationConfig> = {
   },
 }
 
-const OUTLET_TYPES = [
-  { id: "tv", label: "Television" },
-  { id: "print", label: "Print / Newspaper" },
-  { id: "radio", label: "Radio" },
-  { id: "podcast", label: "Podcast" },
-  { id: "social", label: "Social Media" },
-  { id: "legacy", label: "Legacy / Wire Service" },
-  { id: "digital", label: "Digital Native" },
+const OUTLET_TYPE_CATEGORIES = [
+  {
+    label: "Legacy Media",
+    types: [
+      { id: "tv", label: "Television" },
+      { id: "print", label: "Print / Newspaper" },
+      { id: "mixed", label: "Multi-Platform" },
+    ],
+  },
+  {
+    label: "New Media",
+    types: [
+      { id: "digital", label: "Digital Native" },
+      { id: "podcast", label: "Podcast" },
+    ],
+  },
 ]
+
+// Flat list for backwards compatibility
+const OUTLET_TYPES = OUTLET_TYPE_CATEGORIES.flatMap((cat) => cat.types)
 
 const COUNTRIES = [
   { value: "all", label: "All Countries" },
@@ -195,10 +207,13 @@ export function AdminOperationDialog({
   const [view, setView] = useState<"filters" | "processing" | "results">("filters")
 
   // Filter state
-  const [outletTypes, setOutletTypes] = useState<string[]>([])
-  const [countryFilter, setCountryFilter] = useState("all")
-  const [skipRecent, setSkipRecent] = useState(false)
-  const [recentDays, setRecentDays] = useState(7)
+  const [filters, setFilters] = useState<OperationFilters>({
+    batchSize: config.defaultBatchSize,
+    outletTypes: [],
+    countryFilter: "all",
+    skipRecent: false,
+    recentDays: 7,
+  })
 
   // Processing state
   const [progress, setProgress] = useState(0)
@@ -210,13 +225,24 @@ export function AdminOperationDialog({
   // Results state
   const [results, setResults] = useState<OperationResults | null>(null)
 
+  useEffect(() => {
+    const mediaTypes = scrapableOutlets.map((o) => o.mediaType)
+    const uniqueTypes = [...new Set(mediaTypes)]
+    console.log("[v0] scrapableOutlets mediaTypes:", uniqueTypes)
+    console.log(
+      "[v0] Sample outlets:",
+      scrapableOutlets.slice(0, 5).map((o) => ({ name: o.name, mediaType: o.mediaType })),
+    )
+  }, [scrapableOutlets])
+
   // Filter outlets based on criteria
   const getFilteredOutlets = useCallback(() => {
     let filtered = [...scrapableOutlets]
 
-    if (outletTypes.length > 0) {
+    if (filters.outletTypes.length > 0) {
+      console.log("[v0] Filtering by outletTypes:", filters.outletTypes)
       filtered = filtered.filter((o) =>
-        outletTypes.some((type) => {
+        filters.outletTypes.some((type) => {
           const mediaType = o.mediaType?.toLowerCase() || ""
           if (type === "tv") return mediaType === "tv" || mediaType === "television"
           if (type === "print") return mediaType === "print" || mediaType === "newspaper"
@@ -229,29 +255,26 @@ export function AdminOperationDialog({
           return mediaType.includes(type.toLowerCase())
         }),
       )
+      console.log("[v0] After filtering, count:", filtered.length)
     }
 
-    if (countryFilter !== "all") {
+    if (filters.countryFilter !== "all") {
       filtered = filtered.filter((o) => {
         const country = o.country?.toLowerCase() || ""
-        if (countryFilter === "us")
+        if (filters.countryFilter === "us")
           return country.includes("united states") || country.includes("usa") || country === "us"
-        if (countryFilter === "uk")
+        if (filters.countryFilter === "uk")
           return country.includes("united kingdom") || country.includes("uk") || country.includes("britain")
-        if (countryFilter === "canada") return country.includes("canada")
-        if (countryFilter === "australia") return country.includes("australia")
+        if (filters.countryFilter === "canada") return country.includes("canada")
+        if (filters.countryFilter === "australia") return country.includes("australia")
         return true
       })
     }
 
     return filtered
-  }, [scrapableOutlets, outletTypes, countryFilter])
+  }, [scrapableOutlets, filters])
 
   const filteredCount = getFilteredOutlets().length
-
-  const handleOutletTypeToggle = (typeId: string) => {
-    setOutletTypes((prev) => (prev.includes(typeId) ? prev.filter((id) => id !== typeId) : [...prev, typeId]))
-  }
 
   const handleStartOperation = async () => {
     setView("processing")
@@ -265,53 +288,133 @@ export function AdminOperationDialog({
     const totalOutlets = outletsToProcess.length
 
     try {
-      // Simulate progress updates during the API call
-      const progressInterval = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 90) return prev
-          return prev + Math.random() * 10
-        })
-      }, 500)
-
       const response = await fetch(config.endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           outlets: outletsToProcess,
           operationType,
-          filters: {
-            batchSize: totalOutlets,
-            outletTypes,
-            countryFilter,
-            skipRecent,
-            recentDays,
-          },
+          filters,
+          stream: true, // Request streaming response
         }),
       })
 
-      clearInterval(progressInterval)
-
-      const data = await response.json()
-
-      const operationResults: OperationResults = {
-        results: (data.results || []).map((r: any) => ({
-          outletId: r.outletId,
-          outletName: outletsToProcess.find((o) => o.id === r.outletId)?.name || r.outletId,
-          success: r.success,
-          data: r.data,
-          error: r.error,
-        })),
-        totalProcessed: data.results?.length || 0,
-        totalSuccess: data.results?.filter((r: any) => r.success).length || 0,
-        totalFailed: data.results?.filter((r: any) => !r.success).length || 0,
-        timestamp: new Date(),
-        filters: { batchSize: totalOutlets, outletTypes, countryFilter, skipRecent, recentDays },
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      setResults(operationResults)
-      setProgress(100)
-      setView("results")
-      onOperationComplete(operationResults)
+      // Check if we got a streaming response
+      const contentType = response.headers.get("content-type")
+      if (contentType?.includes("text/event-stream")) {
+        // Handle streaming response
+        const reader = response.body?.getReader()
+        const decoder = new TextDecoder()
+        const allResults: Array<{
+          outletId: string
+          outletName: string
+          success: boolean
+          data?: any
+          error?: string
+        }> = []
+
+        if (reader) {
+          let buffer = ""
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split("\n\n")
+            buffer = lines.pop() || ""
+
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                try {
+                  const data = JSON.parse(line.slice(6))
+
+                  if (data.type === "progress") {
+                    // Update live progress
+                    setProcessedCount(data.current)
+                    setProgress((data.current / totalOutlets) * 100)
+                    setCurrentOutlet(data.outletName)
+
+                    if (data.success) {
+                      setLiveSuccess((prev) => prev + 1)
+                    } else {
+                      setLiveFailed((prev) => prev + 1)
+                    }
+
+                    // Store result
+                    allResults.push({
+                      outletId: data.result.outletId,
+                      outletName: data.outletName,
+                      success: data.result.success,
+                      data: data.result.data,
+                      error: data.result.error,
+                    })
+                  } else if (data.type === "complete") {
+                    // Final completion
+                    const operationResults: OperationResults = {
+                      results: allResults,
+                      totalProcessed: data.totalProcessed,
+                      totalSuccess: data.totalSuccess,
+                      totalFailed: data.totalFailed,
+                      timestamp: new Date(),
+                      filters,
+                    }
+
+                    setResults(operationResults)
+                    setProgress(100)
+                    setView("results")
+                    onOperationComplete(operationResults)
+                    return
+                  }
+                } catch (parseError) {
+                  console.error("[v0] Error parsing SSE data:", parseError)
+                }
+              }
+            }
+          }
+        }
+
+        // If we exit the loop without completion, show results anyway
+        const operationResults: OperationResults = {
+          results: allResults,
+          totalProcessed: allResults.length,
+          totalSuccess: allResults.filter((r) => r.success).length,
+          totalFailed: allResults.filter((r) => !r.success).length,
+          timestamp: new Date(),
+          filters,
+        }
+
+        setResults(operationResults)
+        setProgress(100)
+        setView("results")
+        onOperationComplete(operationResults)
+      } else {
+        // Handle non-streaming JSON response (fallback)
+        const data = await response.json()
+
+        const operationResults: OperationResults = {
+          results: (data.results || []).map((r: any) => ({
+            outletId: r.outletId,
+            outletName: outletsToProcess.find((o) => o.id === r.outletId)?.name || r.outletId,
+            success: r.success,
+            data: r.data,
+            error: r.error,
+          })),
+          totalProcessed: data.results?.length || 0,
+          totalSuccess: data.results?.filter((r: any) => r.success).length || 0,
+          totalFailed: data.results?.filter((r: any) => !r.success).length || 0,
+          timestamp: new Date(),
+          filters,
+        }
+
+        setResults(operationResults)
+        setProgress(100)
+        setView("results")
+        onOperationComplete(operationResults)
+      }
     } catch (error) {
       console.error(`[v0] ${operationType} operation error:`, error)
       const errorResults: OperationResults = {
@@ -327,11 +430,12 @@ export function AdminOperationDialog({
         totalSuccess: 0,
         totalFailed: 1,
         timestamp: new Date(),
-        filters: { batchSize: filteredCount, outletTypes, countryFilter, skipRecent, recentDays },
+        filters,
       }
       setResults(errorResults)
       setProgress(100)
       setView("results")
+      onOperationComplete(errorResults)
     }
   }
 
@@ -384,30 +488,43 @@ export function AdminOperationDialog({
       </DialogHeader>
 
       <div className="grid gap-6 py-4">
-        {/* Outlet Types Filter */}
+        {/* Filter by Outlet Type */}
         <div className="space-y-3">
           <Label className="text-sm font-medium">Filter by Outlet Type (optional)</Label>
-          <div className="grid grid-cols-2 gap-2">
-            {OUTLET_TYPES.map((type) => {
-              const isSelected = outletTypes.includes(type.id)
-              return (
-                <button
-                  key={type.id}
-                  type="button"
-                  onClick={() => handleOutletTypeToggle(type.id)}
-                  className={`flex items-center gap-2 rounded-lg border p-2 text-left text-sm transition-all ${
-                    isSelected
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:bg-muted"
-                  }`}
-                >
-                  <Checkbox checked={isSelected} className="pointer-events-none h-4 w-4" />
-                  <span>{type.label}</span>
-                </button>
-              )
-            })}
+          <div className="space-y-4">
+            {OUTLET_TYPE_CATEGORIES.map((category) => (
+              <div key={category.label} className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{category.label}</p>
+                <div className="flex flex-wrap gap-2">
+                  {category.types.map((type) => (
+                    <label
+                      key={type.id}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer transition-colors text-sm",
+                        filters.outletTypes.includes(type.id)
+                          ? "bg-primary/10 border-primary text-primary"
+                          : "bg-background hover:bg-muted",
+                      )}
+                    >
+                      <Checkbox
+                        checked={filters.outletTypes.includes(type.id)}
+                        onCheckedChange={(checked) => {
+                          setFilters((prev) => ({
+                            ...prev,
+                            outletTypes: checked
+                              ? [...prev.outletTypes, type.id]
+                              : prev.outletTypes.filter((t) => t !== type.id),
+                          }))
+                        }}
+                      />
+                      {type.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
-          {outletTypes.length === 0 && (
+          {filters.outletTypes.length === 0 && (
             <p className="text-xs text-muted-foreground">No filter applied - all outlet types included</p>
           )}
         </div>
@@ -415,7 +532,10 @@ export function AdminOperationDialog({
         {/* Country Filter */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">Filter by Country (optional)</Label>
-          <Select value={countryFilter} onValueChange={setCountryFilter}>
+          <Select
+            value={filters.countryFilter}
+            onValueChange={(value) => setFilters((prev) => ({ ...prev, countryFilter: value }))}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Select country" />
             </SelectTrigger>
@@ -434,22 +554,22 @@ export function AdminOperationDialog({
           <div className="flex items-center gap-3">
             <Checkbox
               id={`skip-recent-${operationType}`}
-              checked={skipRecent}
-              onCheckedChange={(checked) => setSkipRecent(checked as boolean)}
+              checked={filters.skipRecent}
+              onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, skipRecent: checked as boolean }))}
             />
             <Label htmlFor={`skip-recent-${operationType}`} className="text-sm font-medium cursor-pointer">
               Skip recently updated outlets
             </Label>
           </div>
-          {skipRecent && (
+          {filters.skipRecent && (
             <div className="ml-6 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Updated within</span>
-                <span className="text-xs font-medium">{recentDays} days</span>
+                <span className="text-xs font-medium">{filters.recentDays} days</span>
               </div>
               <Slider
-                value={[recentDays]}
-                onValueChange={([val]) => setRecentDays(val)}
+                value={[filters.recentDays]}
+                onValueChange={([val]) => setFilters((prev) => ({ ...prev, recentDays: val }))}
                 min={1}
                 max={30}
                 step={1}
