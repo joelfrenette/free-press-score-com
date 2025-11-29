@@ -588,12 +588,18 @@ Return ONLY the JSON array, no other text.`
     const normalizedName = (outlet.name || "").toLowerCase().trim()
     if (!normalizedName) continue
 
-    const isDuplicate =
-      outletExists(outlet.name) ||
-      existingNames.has(normalizedName) ||
-      Array.from(existingNames).some(
-        (existing) => existing.includes(normalizedName) || normalizedName.includes(existing),
-      )
+    const duplicateCheck = outletExists(outlet.name, outlet.website)
+    const isDuplicate = duplicateCheck.exists || existingNames.has(normalizedName)
+
+    // Build the error message with match info if it's a duplicate
+    let errorMessage: string | undefined = undefined
+    if (isDuplicate) {
+      if (duplicateCheck.exists && duplicateCheck.matchedOutlet) {
+        errorMessage = `"${outlet.name}" matches existing outlet "${duplicateCheck.matchedOutlet}" (${duplicateCheck.matchType} match)`
+      } else {
+        errorMessage = `"${outlet.name}" already exists in database`
+      }
+    }
 
     if (!isDuplicate) {
       const newOutlet = createOutletFromDiscovery(outlet, country, mediaTypes[0], minAudience)
@@ -607,8 +613,13 @@ Return ONLY the JSON array, no other text.`
       data: {
         ...outlet,
         source: aiSource,
+        // Include match info for transparency
+        ...(duplicateCheck.exists && {
+          matchedExisting: duplicateCheck.matchedOutlet,
+          matchType: duplicateCheck.matchType,
+        }),
       },
-      error: isDuplicate ? `"${outlet.name}" already exists in database` : undefined,
+      error: errorMessage,
     })
   }
 

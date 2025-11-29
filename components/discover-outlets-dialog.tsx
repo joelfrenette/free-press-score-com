@@ -30,6 +30,7 @@ import {
   XCircle,
   AlertCircle,
   ExternalLink,
+  Copy,
 } from "lucide-react"
 
 export interface DiscoveryFilters {
@@ -48,6 +49,8 @@ export interface DiscoveredOutlet {
   description: string
   status: "added" | "duplicate" | "failed"
   reason?: string
+  matchedExisting?: string
+  matchType?: string
 }
 
 export interface DiscoveryResults {
@@ -110,6 +113,18 @@ function getMediaTypeLabel(id: string): string {
 
 function getCountryLabel(value: string): string {
   return COUNTRIES.find((c) => c.value === value)?.label || value
+}
+
+function getMatchTypeLabel(matchType?: string): string {
+  const labels: Record<string, string> = {
+    exact: "Exact name match",
+    similar: "Similar name",
+    partial: "Partial name match",
+    website: "Same website",
+    domain: "Same domain",
+    fuzzy: "Very similar name",
+  }
+  return labels[matchType || ""] || "Already exists"
 }
 
 export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: DiscoverOutletsDialogProps) {
@@ -194,7 +209,7 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
           </div>
         </div>
 
-        {/* Search Filters Used - Removed bias badge */}
+        {/* Search Filters Used */}
         <div className="rounded-lg border bg-muted/30 p-3 mb-4">
           <div className="text-sm font-medium mb-2">Search Filters Used:</div>
           <div className="flex flex-wrap gap-2">
@@ -208,7 +223,7 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
           </div>
         </div>
 
-        {/* Results List - Improved outlet display with clearer names */}
+        {/* Results List - Improved outlet display with clearer duplicate info */}
         <ScrollArea className="h-[300px] rounded-lg border">
           <div className="p-4 space-y-3">
             {results.outlets.map((outlet, index) => (
@@ -224,18 +239,38 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {outlet.status === "added" && <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />}
-                      {outlet.status === "duplicate" && <AlertCircle className="h-4 w-4 text-yellow-500 shrink-0" />}
+                      {outlet.status === "duplicate" && <Copy className="h-4 w-4 text-yellow-500 shrink-0" />}
                       {outlet.status === "failed" && <XCircle className="h-4 w-4 text-red-500 shrink-0" />}
                       <span className="font-semibold text-base">{outlet.name}</span>
-                      {outlet.status === "duplicate" && (
-                        <Badge variant="outline" className="text-yellow-600 border-yellow-500/50 text-xs">
-                          Already Exists
+                      {outlet.status === "added" && (
+                        <Badge variant="outline" className="text-green-600 border-green-500/50 text-xs">
+                          Added to Database
                         </Badge>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{outlet.description}</p>
+
+                    {outlet.status === "duplicate" && (
+                      <div className="mt-2 p-2 rounded bg-yellow-500/10 border border-yellow-500/20">
+                        <div className="flex items-center gap-2 text-sm text-yellow-700">
+                          <AlertCircle className="h-4 w-4 shrink-0" />
+                          <span className="font-medium">Duplicate Detected</span>
+                        </div>
+                        {outlet.matchedExisting && (
+                          <p className="text-xs text-yellow-600 mt-1">
+                            Matches existing outlet: <strong>"{outlet.matchedExisting}"</strong>
+                          </p>
+                        )}
+                        {outlet.matchType && (
+                          <p className="text-xs text-yellow-600/80 mt-0.5">
+                            Reason: {getMatchTypeLabel(outlet.matchType)}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{outlet.description}</p>
                     <div className="flex flex-wrap items-center gap-2 mt-2">
                       <Badge variant="outline" className="text-xs">
                         {outlet.country}
@@ -247,7 +282,9 @@ export function DiscoverOutletsDialog({ onDiscover, isLoading, disabled }: Disco
                         {formatAudience(outlet.estimatedAudience)} audience
                       </Badge>
                     </div>
-                    {outlet.reason && <p className="text-xs text-muted-foreground mt-2 italic">{outlet.reason}</p>}
+                    {outlet.reason && !outlet.matchedExisting && (
+                      <p className="text-xs text-muted-foreground mt-2 italic">{outlet.reason}</p>
+                    )}
                   </div>
                   {outlet.website && (
                     <Button variant="ghost" size="icon" asChild className="shrink-0">

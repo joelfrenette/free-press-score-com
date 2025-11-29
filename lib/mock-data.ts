@@ -10,14 +10,106 @@ export function getOutletCount(): number {
   return mediaOutlets.length
 }
 
-export function outletExists(name: string): boolean {
+// Helper function for fuzzy matching
+function levenshteinDistance(str1: string, str2: string): number {
+  const m = str1.length
+  const n = str2.length
+  const dp: number[][] = Array(m + 1)
+    .fill(null)
+    .map(() => Array(n + 1).fill(0))
+
+  for (let i = 0; i <= m; i++) dp[i][0] = i
+  for (let j = 0; j <= n; j++) dp[0][j] = j
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (str1[i - 1] === str2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1]
+      } else {
+        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+      }
+    }
+  }
+
+  return dp[m][n]
+}
+
+export function outletExists(
+  name: string,
+  website?: string,
+): { exists: boolean; matchedOutlet?: string; matchType?: string } {
   const normalizedName = name.toLowerCase().trim()
-  return mediaOutlets.some(
-    (o) =>
-      o.name.toLowerCase().trim() === normalizedName ||
-      o.name.toLowerCase().includes(normalizedName) ||
-      normalizedName.includes(o.name.toLowerCase()),
-  )
+
+  // Remove common prefixes/suffixes for better matching
+  const cleanName = normalizedName
+    .replace(/^the\s+/i, "")
+    .replace(/\s+(news|network|media|online|digital|tv|radio)$/i, "")
+    .trim()
+
+  for (const outlet of mediaOutlets) {
+    const existingName = outlet.name.toLowerCase().trim()
+    const existingCleanName = existingName
+      .replace(/^the\s+/i, "")
+      .replace(/\s+(news|network|media|online|digital|tv|radio)$/i, "")
+      .trim()
+
+    // Exact match
+    if (existingName === normalizedName) {
+      return { exists: true, matchedOutlet: outlet.name, matchType: "exact" }
+    }
+
+    // Clean name exact match
+    if (existingCleanName === cleanName && cleanName.length > 3) {
+      return { exists: true, matchedOutlet: outlet.name, matchType: "similar" }
+    }
+
+    // One contains the other (for longer names only to avoid false positives)
+    if (cleanName.length > 5 && existingCleanName.length > 5) {
+      if (existingCleanName.includes(cleanName) || cleanName.includes(existingCleanName)) {
+        return { exists: true, matchedOutlet: outlet.name, matchType: "partial" }
+      }
+    }
+
+    // Website match (if provided)
+    if (website && outlet.website) {
+      const normalizedWebsite = website
+        .toLowerCase()
+        .replace(/^(https?:\/\/)?(www\.)?/, "")
+        .replace(/\/$/, "")
+      const existingWebsite = outlet.website
+        .toLowerCase()
+        .replace(/^(https?:\/\/)?(www\.)?/, "")
+        .replace(/\/$/, "")
+
+      if (normalizedWebsite === existingWebsite) {
+        return { exists: true, matchedOutlet: outlet.name, matchType: "website" }
+      }
+
+      // Check if domains match (e.g., cnn.com matches edition.cnn.com)
+      const newDomain = normalizedWebsite.split("/")[0]
+      const existingDomain = existingWebsite.split("/")[0]
+      if (
+        newDomain === existingDomain ||
+        newDomain.endsWith("." + existingDomain) ||
+        existingDomain.endsWith("." + newDomain)
+      ) {
+        return { exists: true, matchedOutlet: outlet.name, matchType: "domain" }
+      }
+    }
+
+    // Levenshtein distance for very similar names (typos, minor variations)
+    if (cleanName.length > 4 && existingCleanName.length > 4) {
+      const distance = levenshteinDistance(cleanName, existingCleanName)
+      const maxLen = Math.max(cleanName.length, existingCleanName.length)
+      const similarity = 1 - distance / maxLen
+
+      if (similarity > 0.85) {
+        return { exists: true, matchedOutlet: outlet.name, matchType: "fuzzy" }
+      }
+    }
+  }
+
+  return { exists: false }
 }
 
 export function findAllDuplicates(): Array<{

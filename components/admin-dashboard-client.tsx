@@ -145,10 +145,15 @@ export function AdminDashboardClient({
           description: r.data?.description || "Media outlet discovered via search.",
           status: r.success
             ? "added"
-            : r.error?.toLowerCase().includes("already exists") || r.error?.toLowerCase().includes("duplicate")
+            : r.error?.toLowerCase().includes("already exists") ||
+                r.error?.toLowerCase().includes("duplicate") ||
+                r.error?.toLowerCase().includes("matches")
               ? "duplicate"
               : "failed",
           reason: r.error,
+          // Pass through duplicate match info from API
+          matchedExisting: r.data?.matchedExisting,
+          matchType: r.data?.matchType,
         }))
         setResults(data.results)
         setProgress(100)
@@ -204,7 +209,7 @@ export function AdminDashboardClient({
         totalAdded: 0,
         totalDuplicates: 0,
         totalFailed: 1,
-        searchFilters: {},
+        searchFilters: filters,
         timestamp: new Date(),
       }
     } finally {
