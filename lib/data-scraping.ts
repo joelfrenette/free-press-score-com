@@ -1315,46 +1315,38 @@ export async function updateOutletLogos(
       let logoUrl: string | null = null
       let source = "placeholder"
 
+      // Try Clearbit Logo API (free, high quality)
       if (outlet.website) {
-        const domain = (() => {
-          try {
-            return new URL(outlet.website!).hostname.replace("www.", "")
-          } catch {
-            return null
-          }
-        })()
-
-        if (domain) {
-          // Try Clearbit Logo API (free, high quality)
+        try {
+          const domain = new URL(outlet.website).hostname.replace("www.", "")
           const clearbitUrl = `https://logo.clearbit.com/${domain}`
-          try {
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), 5000)
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 5000)
 
-            // Use GET with no-cors mode to avoid throwing on 404
-            const response = await Promise.race([
-              fetch(clearbitUrl, {
-                method: "HEAD",
-                signal: controller.signal,
-              }),
-              new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-            ]).catch(() => null)
+          const response = await fetch(clearbitUrl, {
+            method: "HEAD",
+            signal: controller.signal,
+          }).catch(() => null)
 
-            clearTimeout(timeoutId)
+          clearTimeout(timeoutId)
 
-            if (response && response instanceof Response && response.ok) {
-              logoUrl = clearbitUrl
-              source = "clearbit"
-            }
-          } catch {
-            // Silently fail - Clearbit doesn't have this logo
+          if (response && response.ok) {
+            logoUrl = clearbitUrl
+            source = "clearbit"
           }
+        } catch {
+          // Continue to next source - Clearbit doesn't have this logo
+        }
+      }
 
-          // Try Google Favicon as fallback
-          if (!logoUrl) {
-            logoUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
-            source = "google-favicon"
-          }
+      // Try Google Favicon as fallback
+      if (!logoUrl && outlet.website) {
+        try {
+          const domain = new URL(outlet.website).hostname
+          logoUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
+          source = "google-favicon"
+        } catch {
+          // Continue
         }
       }
 
