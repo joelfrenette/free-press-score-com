@@ -64,10 +64,11 @@ export async function discoverNewOutlets(filters: DiscoveryFilters = {}): Promis
   const results: ScrapeResult[] = []
   let geminiWorked = false
 
-  // Try Gemini AI first for discovering real outlets
   const geminiApiKey = process.env.GEMINI_API_KEY
-  if (geminiApiKey && geminiApiKey.length > 20) {
-    // Basic validation - real API keys are longer
+  const isValidGeminiKey =
+    geminiApiKey && geminiApiKey.length > 30 && geminiApiKey.startsWith("AIza") && !geminiApiKey.includes("client")
+
+  if (isValidGeminiKey) {
     try {
       const countryLabel = getCountryLabel(country)
       const mediaTypeLabels = mediaTypes.map(getMediaTypeLabel).join(", ")
