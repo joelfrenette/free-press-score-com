@@ -10,6 +10,7 @@ interface Duplicate {
   name: string
   ids: string[]
   count: number
+  matchType?: string // Added matchType to show why items matched
 }
 
 interface MergeResult {
@@ -179,9 +180,14 @@ export function MergeDuplicatesDialog({ open, onOpenChange, onMergeComplete }: M
                           <p className="font-medium">{dup.name}</p>
                           <p className="text-xs text-muted-foreground mt-1">IDs: {dup.ids.join(", ")}</p>
                         </div>
-                        <Badge variant="secondary" className="ml-2">
-                          {dup.count} entries
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          {dup.matchType && (
+                            <Badge variant="outline" className="text-xs">
+                              {dup.matchType}
+                            </Badge>
+                          )}
+                          <Badge variant="secondary">{dup.count} entries</Badge>
+                        </div>
                       </div>
                     ))}
                   </div>

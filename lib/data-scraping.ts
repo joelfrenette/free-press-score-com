@@ -24,20 +24,21 @@ export interface DiscoveryFilters {
 // Get existing outlets for reference
 const existingOutlets = mediaOutlets
 
-// Helper to make AI API calls with cascade fallback
+// Also added ScrapingBee web scraping integration for supplementary data
 async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<string | null> {
-  // 1. Try OpenAI
-  const openaiKey = process.env.OPENAI_API_KEY
-  if (openaiKey && openaiKey.startsWith("sk-") && openaiKey.length > 30) {
+  // 1. Try Groq FIRST (fastest - Llama on custom hardware, sub-second responses)
+  const groqKey = process.env.GROQ_API_KEY
+  if (groqKey && groqKey.length > 20) {
     try {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      console.log("[v0] Trying Groq (fastest)...")
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${openaiKey}`,
+          Authorization: `Bearer ${groqKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "llama-3.3-70b-versatile",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: prompt },
@@ -51,51 +52,22 @@ async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<
         const data = await response.json()
         const content = data.choices?.[0]?.message?.content
         if (content) {
-          console.log("[v0] OpenAI response received")
+          console.log("[v0] Groq response received (fastest provider)")
           return content
         }
+      } else {
+        console.log("[v0] Groq response not ok:", response.status)
       }
     } catch (error) {
-      console.log("[v0] OpenAI failed, trying next provider")
+      console.log("[v0] Groq failed, trying next provider:", error)
     }
   }
 
-  // 2. Try Anthropic Claude
-  const anthropicKey = process.env.ANTHROPIC_API_KEY
-  if (anthropicKey && anthropicKey.startsWith("sk-ant-") && anthropicKey.length > 30) {
-    try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": anthropicKey,
-          "Content-Type": "application/json",
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: "claude-3-haiku-20240307",
-          max_tokens: 4000,
-          system: systemPrompt,
-          messages: [{ role: "user", content: prompt }],
-        }),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        const content = data.content?.[0]?.text
-        if (content) {
-          console.log("[v0] Anthropic response received")
-          return content
-        }
-      }
-    } catch (error) {
-      console.log("[v0] Anthropic failed, trying next provider")
-    }
-  }
-
-  // 3. Try Grok/xAI
+  // 2. Try Grok/xAI (fast, real-time data access)
   const xaiKey = process.env.XAI_API_KEY
-  if (xaiKey && xaiKey.startsWith("xai-") && xaiKey.length > 30) {
+  if (xaiKey && xaiKey.length > 20) {
     try {
+      console.log("[v0] Trying Grok/xAI...")
       const response = await fetch("https://api.x.ai/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -120,24 +92,27 @@ async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<
           console.log("[v0] Grok response received")
           return content
         }
+      } else {
+        console.log("[v0] Grok response not ok:", response.status)
       }
     } catch (error) {
-      console.log("[v0] Grok failed, trying next provider")
+      console.log("[v0] Grok failed, trying next provider:", error)
     }
   }
 
-  // 4. Try Groq
-  const groqKey = process.env.GROQ_API_KEY
-  if (groqKey && groqKey.startsWith("gsk_") && groqKey.length > 30) {
+  // 3. Try OpenAI (reliable, good quality)
+  const openaiKey = process.env.OPENAI_API_KEY
+  if (openaiKey && openaiKey.length > 20) {
     try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      console.log("[v0] Trying OpenAI...")
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${groqKey}`,
+          Authorization: `Bearer ${openaiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "llama-3.1-70b-versatile",
+          model: "gpt-4o-mini",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: prompt },
@@ -151,19 +126,57 @@ async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<
         const data = await response.json()
         const content = data.choices?.[0]?.message?.content
         if (content) {
-          console.log("[v0] Groq response received")
+          console.log("[v0] OpenAI response received")
           return content
         }
+      } else {
+        console.log("[v0] OpenAI response not ok:", response.status)
       }
     } catch (error) {
-      console.log("[v0] Groq failed, trying next provider")
+      console.log("[v0] OpenAI failed, trying next provider:", error)
     }
   }
 
-  // 5. Try Perplexity
-  const perplexityKey = process.env.PERPLEXITY_API_KEY
-  if (perplexityKey && perplexityKey.startsWith("pplx-") && perplexityKey.length > 20) {
+  // 4. Try Anthropic Claude (high quality reasoning)
+  const anthropicKey = process.env.ANTHROPIC_API_KEY
+  if (anthropicKey && anthropicKey.length > 20) {
     try {
+      console.log("[v0] Trying Anthropic Claude...")
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthropicKey,
+          "Content-Type": "application/json",
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-3-haiku-20240307",
+          max_tokens: 4000,
+          system: systemPrompt,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        const content = data.content?.[0]?.text
+        if (content) {
+          console.log("[v0] Anthropic response received")
+          return content
+        }
+      } else {
+        console.log("[v0] Anthropic response not ok:", response.status)
+      }
+    } catch (error) {
+      console.log("[v0] Anthropic failed, trying next provider:", error)
+    }
+  }
+
+  // 5. Try Perplexity (has real-time web search)
+  const perplexityKey = process.env.PERPLEXITY_API_KEY
+  if (perplexityKey && perplexityKey.length > 20) {
+    try {
+      console.log("[v0] Trying Perplexity...")
       const response = await fetch("https://api.perplexity.ai/chat/completions", {
         method: "POST",
         headers: {
@@ -188,16 +201,19 @@ async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<
           console.log("[v0] Perplexity response received")
           return content
         }
+      } else {
+        console.log("[v0] Perplexity response not ok:", response.status)
       }
     } catch (error) {
-      console.log("[v0] Perplexity failed, trying next provider")
+      console.log("[v0] Perplexity failed, trying next provider:", error)
     }
   }
 
-  // 6. Try OpenRouter
+  // 6. Try OpenRouter (fallback with free models)
   const openrouterKey = process.env.OPENROUTER_API_KEY
-  if (openrouterKey && openrouterKey.startsWith("sk-or-") && openrouterKey.length > 30) {
+  if (openrouterKey && openrouterKey.length > 20) {
     try {
+      console.log("[v0] Trying OpenRouter...")
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -223,13 +239,124 @@ async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<
           console.log("[v0] OpenRouter response received")
           return content
         }
+      } else {
+        console.log("[v0] OpenRouter response not ok:", response.status)
       }
     } catch (error) {
       console.log("[v0] OpenRouter failed")
     }
   }
 
+  console.log("[v0] All AI providers failed")
   return null
+}
+
+async function scrapeWebsiteWithScrapingBee(url: string): Promise<{ html: string; success: boolean } | null> {
+  const scrapingBeeKey = process.env.SCRAPINGBEE_API_KEY
+  if (!scrapingBeeKey) {
+    console.log("[v0] ScrapingBee API key not configured")
+    return null
+  }
+
+  try {
+    console.log(`[v0] Scraping ${url} with ScrapingBee...`)
+    const apiUrl = `https://app.scrapingbee.com/api/v1/?api_key=${scrapingBeeKey}&url=${encodeURIComponent(url)}&render_js=false&premium_proxy=false`
+    const response = await fetch(apiUrl)
+
+    if (!response.ok) {
+      console.log(`[v0] ScrapingBee returned ${response.status}`)
+      return null
+    }
+
+    const html = await response.text()
+    console.log(`[v0] ScrapingBee scraped ${html.length} bytes from ${url}`)
+    return { html, success: true }
+  } catch (error) {
+    console.log("[v0] ScrapingBee error:", error)
+    return null
+  }
+}
+
+function extractDataFromHTML(html: string, dataType: string): Record<string, any> | null {
+  const data: Record<string, any> = {}
+
+  // Extract meta tags
+  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
+  if (titleMatch) data.title = titleMatch[1].trim()
+
+  const descMatch = html.match(/name="description"\s+content="([^"]+)"/i)
+  if (descMatch) data.description = descMatch[1]
+
+  const ogImageMatch = html.match(/property="og:image"\s+content="([^"]+)"/i)
+  if (ogImageMatch) data.ogImage = ogImageMatch[1]
+
+  // Extract social media links
+  const socialLinks: string[] = []
+  const twitterMatch = html.match(/href="(https?:\/\/(www\.)?(twitter|x)\.com\/[^"]+)"/gi)
+  if (twitterMatch) socialLinks.push(...twitterMatch.map((m) => m.replace(/href="|"/g, "")))
+
+  const facebookMatch = html.match(/href="(https?:\/\/(www\.)?facebook\.com\/[^"]+)"/gi)
+  if (facebookMatch) socialLinks.push(...facebookMatch.map((m) => m.replace(/href="|"/g, "")))
+
+  const youtubeMatch = html.match(/href="(https?:\/\/(www\.)?youtube\.com\/[^"]+)"/gi)
+  if (youtubeMatch) socialLinks.push(...youtubeMatch.map((m) => m.replace(/href="|"/g, "")))
+
+  if (socialLinks.length > 0) data.socialLinks = [...new Set(socialLinks)]
+
+  // Extract copyright/ownership info
+  const copyrightMatch = html.match(/©\s*\d{4}\s*([^<\n]+)/i)
+  if (copyrightMatch) data.copyright = copyrightMatch[1].trim()
+
+  // Extract about page links
+  const aboutMatch = html.match(/href="([^"]*(?:about|who-we-are|our-team)[^"]*)"/i)
+  if (aboutMatch) data.aboutPage = aboutMatch[1]
+
+  // Specific extraction for ownership data if needed
+  if (dataType === "ownership") {
+    const ownershipInfo = html.match(/ownership(?: structure)?[:\s]*([\s\S]*?)(?:<|$)/i)?.[1]
+    if (ownershipInfo) {
+      data.ownershipInfo = ownershipInfo.trim()
+    }
+    const parentCompanyMatch = html.match(/parent company[:\s]*([^<\n]+)/i)?.[1]
+    if (parentCompanyMatch) {
+      data.parentCompany = parentCompanyMatch.trim()
+    }
+    const ultimateOwnerMatch = html.match(/(?:ultimate owner|owned by)[:\s]*([^<\n]+)/i)?.[1]
+    if (ultimateOwnerMatch) {
+      data.ultimateOwner = ultimateOwnerMatch.trim()
+    }
+  }
+
+  return Object.keys(data).length > 0 ? data : null
+}
+
+async function searchWithSERP(query: string): Promise<any[] | null> {
+  const serpKey = process.env.SERP_API_KEY
+  if (!serpKey) {
+    console.log("[v0] SERP API key not configured")
+    return null
+  }
+
+  try {
+    console.log(`[v0] Searching SERP for: ${query}`)
+    const searchUrl = `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${serpKey}&num=10`
+    const response = await fetch(searchUrl)
+
+    if (!response.ok) {
+      console.log(`[v0] SERP API returned ${response.status}`)
+      return null
+    }
+
+    const data = await response.json()
+    if (data.organic_results && data.organic_results.length > 0) {
+      console.log(`[v0] SERP returned ${data.organic_results.length} results`)
+      return data.organic_results
+    }
+    return null
+  } catch (error) {
+    console.log("[v0] SERP API error:", error)
+    return null
+  }
 }
 
 // Parse JSON from AI response
@@ -275,6 +402,15 @@ export async function scrapeOutletData(outletId: string): Promise<OutletData | n
   const outlet = existingOutlets.find((o) => o.id === outletId)
   if (!outlet) return null
 
+  let scrapedData: Record<string, any> = {}
+  if (outlet.website) {
+    const webData = await scrapeWebsiteWithScrapingBee(outlet.website)
+    if (webData?.success) {
+      const extracted = extractDataFromHTML(webData.html, "general")
+      if (extracted) scrapedData = extracted
+    }
+  }
+
   const systemPrompt = `You are a media research assistant. Provide accurate, factual information about media outlets. Always return valid JSON.`
 
   const prompt = `Research the media outlet "${outlet.name}" and provide comprehensive data including:
@@ -284,6 +420,7 @@ export async function scrapeOutletData(outletId: string): Promise<OutletData | n
 - Political leaning indicators
 - Revenue sources
 - Notable controversies
+${Object.keys(scrapedData).length > 0 ? `\nI found this data from their website: ${JSON.stringify(scrapedData)}` : ""}
 
 Return as JSON: { "ownership": {...}, "executives": [...], "politicalLeaning": "...", "revenue": {...}, "controversies": [...] }`
 
@@ -291,7 +428,7 @@ Return as JSON: { "ownership": {...}, "executives": [...], "politicalLeaning": "
   if (response) {
     const parsed = parseJSONFromResponse(response)
     if (parsed) {
-      return { id: outletId, name: outlet.name, data: parsed }
+      return { id: outletId, name: outlet.name, data: { ...scrapedData, ...parsed } }
     }
   }
 
@@ -427,14 +564,14 @@ Return ONLY the JSON array, no other text.`
       })
     } else {
       // Add to database
-      const newOutlet = createOutletFromDiscovery(outlet)
+      const newOutlet = await createOutletFromDiscoveryWithScoring(outlet) // Use the new scoring version
       const added = addOutlet(newOutlet)
 
       if (added) {
         results.push({
           outletId: newOutlet.id,
           success: true,
-          data: outlet,
+          data: outlet, // Note: data here is from AI, not the fully enriched outlet
         })
       } else {
         results.push({
@@ -493,6 +630,125 @@ function createOutletFromDiscovery(data: any): MediaOutlet {
   }
 }
 
+export async function scoreNewOutlet(outlet: MediaOutlet): Promise<{
+  biasScore: number
+  freePressScore: number
+  scores: {
+    ownershipTransparency: number
+    journalisticStandards: number
+    correctionPolicy: number
+    financialTransparency: number
+  }
+}> {
+  const systemPrompt = `You are a media analysis expert. Evaluate media outlets objectively based on their journalistic practices, ownership transparency, and editorial standards.`
+
+  const prompt = `Analyze the media outlet "${outlet.name}" (${outlet.website || "website unknown"}) and provide scores:
+
+1. biasScore: Political bias from -2 (far left) to +2 (far right), 0 = center
+2. freePressScore: Overall press freedom/quality score from 0-100
+3. ownershipTransparency: How transparent is ownership (0-100)
+4. journalisticStandards: Quality of journalism (0-100)
+5. correctionPolicy: How well they handle corrections (0-100)
+6. financialTransparency: How transparent is funding (0-100)
+
+Return ONLY valid JSON:
+{
+  "biasScore": 0,
+  "freePressScore": 50,
+  "ownershipTransparency": 50,
+  "journalisticStandards": 50,
+  "correctionPolicy": 50,
+  "financialTransparency": 50,
+  "reasoning": "Brief explanation"
+}`
+
+  try {
+    const response = await callAIWithCascade(prompt, systemPrompt)
+    if (response) {
+      const parsed = parseJSONFromResponse(response)
+      if (parsed && typeof parsed.biasScore === "number") {
+        return {
+          biasScore: Math.max(-2, Math.min(2, parsed.biasScore)),
+          freePressScore: Math.max(0, Math.min(100, parsed.freePressScore || 50)),
+          scores: {
+            ownershipTransparency: Math.max(0, Math.min(100, parsed.ownershipTransparency || 50)),
+            journalisticStandards: Math.max(0, Math.min(100, parsed.journalisticStandards || 50)),
+            correctionPolicy: Math.max(0, Math.min(100, parsed.correctionPolicy || 50)),
+            financialTransparency: Math.max(0, Math.min(100, parsed.financialTransparency || 50)),
+          },
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[v0] Error scoring outlet:", error)
+  }
+
+  // Return neutral defaults if AI fails
+  return {
+    biasScore: 0,
+    freePressScore: 50,
+    scores: {
+      ownershipTransparency: 50,
+      journalisticStandards: 50,
+      correctionPolicy: 50,
+      financialTransparency: 50,
+    },
+  }
+}
+
+async function createOutletFromDiscoveryWithScoring(data: any): Promise<MediaOutlet> {
+  const id = data.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+
+  // Create basic outlet first
+  const basicOutlet: MediaOutlet = {
+    id,
+    name: data.name,
+    type: mapMediaType(data.mediaType),
+    country: data.country || "Unknown",
+    website: data.website || "",
+    logo: `/placeholder.svg?height=100&width=100&query=${encodeURIComponent(data.name + " logo")}`,
+    description: data.description || `${data.name} media outlet`,
+    biasScore: 0,
+    freePressScore: 50,
+    outletType: data.mediaType === "social" || data.mediaType === "podcast" ? "influencer" : "traditional",
+    audienceSize: data.estimatedAudience || 1000000,
+    platform: data.mediaType === "social" ? "youtube" : undefined,
+    scores: {
+      ownershipTransparency: 50,
+      journalisticStandards: 50,
+      correctionPolicy: 50,
+      financialTransparency: 50,
+    },
+    ownership: {
+      type: "unknown",
+      details: "Ownership data pending research",
+    },
+    funding: {
+      sources: [],
+      details: "Funding data pending research",
+    },
+    accountability: {
+      corrections: "unknown",
+      details: "Accountability data pending research",
+    },
+  }
+
+  // Get AI scoring
+  console.log(`[v0] Getting AI scores for ${data.name}...`)
+  const scoring = await scoreNewOutlet(basicOutlet)
+
+  return {
+    ...basicOutlet,
+    biasScore: scoring.biasScore,
+    freePressScore: scoring.freePressScore,
+    scores: scoring.scores,
+  }
+}
+
 function mapMediaType(type: string): MediaOutlet["type"] {
   const typeMap: Record<string, MediaOutlet["type"]> = {
     tv: "tv",
@@ -511,16 +767,51 @@ function mapMediaType(type: string): MediaOutlet["type"] {
 }
 
 // REAL: Scrape ownership data using AI
-export async function scrapeOwnershipData(outlets: Array<{ id: string; name: string }>): Promise<ScrapeResult[]> {
+export async function scrapeOwnershipData(
+  outlets: Array<{ id: string; name: string; website?: string }>,
+): Promise<ScrapeResult[]> {
   console.log(
     "[v0] Scraping REAL ownership data for:",
     outlets.map((o) => o.name),
   )
   const results: ScrapeResult[] = []
 
-  const systemPrompt = `You are a media ownership research expert. Provide accurate, factual information about media company ownership structures. Always cite verifiable facts.`
+  const systemPrompt = `You are a media ownership research expert. Provide accurate, factual information about media company ownership structures. Always cite verifiable facts and return valid JSON.`
 
   for (const outlet of outlets) {
+    // First try to scrape about/ownership page with ScrapingBee
+    let scrapedContext = ""
+    if (outlet.website) {
+      // Try common about page URLs
+      const aboutUrls = [
+        `${outlet.website}/about`,
+        `${outlet.website}/about-us`,
+        `${outlet.website}/corporate`,
+        `${outlet.website}/company`,
+      ]
+
+      for (const aboutUrl of aboutUrls) {
+        const webData = await scrapeWebsiteWithScrapingBee(aboutUrl)
+        if (webData?.success && webData.html.length > 1000) {
+          const extracted = extractDataFromHTML(webData.html, "ownership")
+          if (extracted) {
+            scrapedContext = `\n\nReal data scraped from ${aboutUrl}: ${JSON.stringify(extracted)}`
+            console.log(`[v0] Found about page data for ${outlet.name}`)
+            break
+          }
+        }
+      }
+    }
+
+    // Also search SERP for ownership info
+    const serpResults = await searchWithSERP(`${outlet.name} ownership parent company`)
+    if (serpResults && serpResults.length > 0) {
+      scrapedContext += `\n\nSearch results about ownership: ${serpResults
+        .slice(0, 3)
+        .map((r: any) => `${r.title}: ${r.snippet}`)
+        .join("; ")}`
+    }
+
     const prompt = `Research the ownership structure of "${outlet.name}" media outlet. Provide:
 1. Parent company name
 2. Ultimate owner (person or corporation)
@@ -528,6 +819,7 @@ export async function scrapeOwnershipData(outlets: Array<{ id: string; name: str
 4. Key shareholders or stakeholders
 5. Any recent ownership changes
 6. Notable cross-media ownership connections
+${scrapedContext}
 
 Return as JSON:
 {
@@ -538,7 +830,8 @@ Return as JSON:
   "recentChanges": "Description of recent changes or 'None'",
   "crossOwnership": ["List of related media properties"],
   "verifiedDate": "2024",
-  "confidence": "high|medium|low"
+  "confidence": "high|medium|low",
+  "sources": ["URLs or sources used"]
 }`
 
     try {
@@ -595,16 +888,28 @@ Return as JSON:
 }
 
 // REAL: Scrape funding data using AI
-export async function scrapeFundingData(outlets: Array<{ id: string; name: string }>): Promise<ScrapeResult[]> {
+export async function scrapeFundingData(
+  outlets: Array<{ id: string; name: string; website?: string }>,
+): Promise<ScrapeResult[]> {
   console.log(
     "[v0] Scraping REAL funding data for:",
     outlets.map((o) => o.name),
   )
   const results: ScrapeResult[] = []
 
-  const systemPrompt = `You are a media finance research expert. Provide accurate information about media company revenue sources, sponsorships, and financial backing.`
+  const systemPrompt = `You are a media finance research expert. Provide accurate information about media company revenue sources, sponsorships, and financial backing. Return valid JSON.`
 
   for (const outlet of outlets) {
+    // Search for funding/advertiser info
+    let scrapedContext = ""
+    const serpResults = await searchWithSERP(`${outlet.name} advertisers sponsors funding revenue`)
+    if (serpResults && serpResults.length > 0) {
+      scrapedContext = `\n\nSearch results about funding: ${serpResults
+        .slice(0, 5)
+        .map((r: any) => `${r.title}: ${r.snippet}`)
+        .join("; ")}`
+    }
+
     const prompt = `Research the funding and revenue sources of "${outlet.name}" media outlet. Provide:
 1. Primary revenue sources (advertising, subscriptions, donations, etc.)
 2. Known major advertisers or sponsors
@@ -612,6 +917,7 @@ export async function scrapeFundingData(outlets: Array<{ id: string; name: strin
 4. Government funding (if any)
 5. Foundation grants or nonprofit backing
 6. Estimated annual revenue (if public)
+${scrapedContext}
 
 Return as JSON:
 {
@@ -622,7 +928,8 @@ Return as JSON:
   "foundationSupport": [{"name": "...", "amount": "..."}],
   "estimatedRevenue": "$XXM annually",
   "financialTransparency": "high|medium|low",
-  "confidence": "high|medium|low"
+  "confidence": "high|medium|low",
+  "sources": ["URLs or sources used"]
 }`
 
     try {
@@ -685,16 +992,29 @@ export async function scrapeLegalCases(outlets: Array<{ id: string; name: string
   )
   const results: ScrapeResult[] = []
 
-  const systemPrompt = `You are a legal research expert specializing in media law. Provide accurate information about defamation suits, lawsuits, and legal proceedings involving media outlets.`
+  const systemPrompt = `You are a legal research expert specializing in media law. Provide accurate information about defamation suits, lawsuits, and legal proceedings involving media outlets. Only cite real, verifiable cases.`
 
   for (const outlet of outlets) {
-    const prompt = `Research legal cases involving "${outlet.name}" media outlet. Find:
+    // Search for legal cases
+    let scrapedContext = ""
+    const serpResults = await searchWithSERP(`${outlet.name} lawsuit defamation legal case settlement`)
+    if (serpResults && serpResults.length > 0) {
+      scrapedContext = `\n\nSearch results about legal cases: ${serpResults
+        .slice(0, 5)
+        .map((r: any) => `${r.title}: ${r.snippet}`)
+        .join("; ")}`
+    }
+
+    const prompt = `Research REAL, VERIFIED legal cases involving "${outlet.name}" media outlet. Only include actual cases you are certain exist. Find:
 1. Defamation or libel lawsuits (won, lost, settled)
 2. FCC violations or complaints
 3. Copyright infringement cases
 4. Privacy violation lawsuits
 5. Retractions ordered by courts
 6. Notable settlements
+
+IMPORTANT: Only include real cases with verifiable details. If you don't know of any real cases, return empty arrays.
+${scrapedContext}
 
 Return as JSON:
 {
@@ -705,7 +1025,8 @@ Return as JSON:
   "courtOrderedRetractions": 0,
   "totalSettlements": "$XXM",
   "legalRiskScore": "high|medium|low",
-  "confidence": "high|medium|low"
+  "confidence": "high|medium|low",
+  "sources": ["URLs or sources for verification"]
 }`
 
     try {

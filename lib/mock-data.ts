@@ -2,6 +2,87 @@ import type { MediaOutlet } from "./types"
 
 export type { MediaOutlet } from "./types"
 
+// Helper function for fuzzy matching
+function levenshteinDistance(str1: string, str2: string): number {
+  const m = str1.length
+  const n = str2.length
+  const dp: number[][] = Array(m + 1)
+    .fill(null)
+    .map(() => Array(n + 1).fill(0))
+
+  for (let i = 0; i <= m; i++) dp[i][0] = i
+  for (let j = 0; j <= n; j++) dp[0][j] = j
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (str1[i - 1] === str2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1]
+      } else {
+        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+      }
+    }
+  }
+
+  return dp[m][n]
+}
+
+function normalizeForComparison(str: string): string {
+  return str
+    .toLowerCase()
+    .replace(/^the\s+/i, "") // Remove leading "The"
+    .replace(/\s+(show|podcast|news|network|media|channel|tv|radio)$/i, "") // Remove common suffixes
+    .replace(/[^\w\s]/g, "") // Remove special chars
+    .replace(/\s+/g, " ") // Normalize spaces
+    .trim()
+}
+
+function extractDomain(url: string | undefined): string | null {
+  if (!url) return null
+  try {
+    const domain = new URL(url.startsWith("http") ? url : `https://${url}`).hostname
+    return domain.replace(/^www\./, "").toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+function calculateSimilarity(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase()
+  const s2 = str2.toLowerCase()
+  if (s1 === s2) return 1
+
+  const longer = s1.length > s2.length ? s1 : s2
+  const shorter = s1.length > s2.length ? s2 : s1
+
+  if (longer.length === 0) return 1
+
+  // Check if one contains the other
+  if (longer.includes(shorter)) {
+    return shorter.length / longer.length
+  }
+
+  // Levenshtein distance
+  const costs: number[] = []
+  for (let i = 0; i <= s1.length; i++) {
+    let lastValue = i
+    for (let j = 0; j <= s2.length; j++) {
+      if (i === 0) {
+        costs[j] = j
+      } else if (j > 0) {
+        let newValue = costs[j - 1]
+        if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
+          newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1
+        }
+        costs[j - 1] = lastValue
+        lastValue = newValue
+      }
+    }
+    if (i > 0) costs[s2.length] = lastValue
+  }
+
+  return (longer.length - costs[s2.length]) / longer.length
+}
+
 export function updateOutlet(id: string, updates: Partial<MediaOutlet>): boolean {
   const index = mediaOutlets.findIndex((o) => o.id === id)
   if (index !== -1) {
@@ -26,30 +107,6 @@ export function addOutlet(outlet: MediaOutlet): boolean {
 
 export function getOutletCount(): number {
   return mediaOutlets.length
-}
-
-// Helper function for fuzzy matching
-function levenshteinDistance(str1: string, str2: string): number {
-  const m = str1.length
-  const n = str2.length
-  const dp: number[][] = Array(m + 1)
-    .fill(null)
-    .map(() => Array(n + 1).fill(0))
-
-  for (let i = 0; i <= m; i++) dp[i][0] = i
-  for (let j = 0; j <= n; j++) dp[0][j] = j
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (str1[i - 1] === str2[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1]
-      } else {
-        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
-      }
-    }
-  }
-
-  return dp[m][n]
 }
 
 export function outletExists(
@@ -130,84 +187,102 @@ export function outletExists(
   return { exists: false }
 }
 
+// Updated findAllDuplicates to use new helper functions
 export function findAllDuplicates(): Array<{
   name: string
   ids: string[]
   count: number
+  matchType: string
 }> {
-  const nameMap = new Map<string, string[]>()
+  const duplicates: Array<{ name: string; ids: string[]; count: number; matchType: string }> = []
+  const processed = new Set<string>()
 
-  for (const outlet of mediaOutlets) {
-    const normalizedName = outlet.name.toLowerCase().trim()
-    if (!nameMap.has(normalizedName)) {
-      nameMap.set(normalizedName, [])
+  for (let i = 0; i < mediaOutlets.length; i++) {
+    if (processed.has(mediaOutlets[i].id)) continue
+
+    const outlet = mediaOutlets[i]
+    const normalizedName = normalizeForComparison(outlet.name)
+    const domain = extractDomain(outlet.website)
+    const matchingIds: string[] = [outlet.id]
+    let matchType = ""
+
+    for (let j = i + 1; j < mediaOutlets.length; j++) {
+      if (processed.has(mediaOutlets[j].id)) continue
+
+      const other = mediaOutlets[j]
+      const otherNormalized = normalizeForComparison(other.name)
+      const otherDomain = extractDomain(other.website)
+
+      // Exact name match (normalized)
+      if (normalizedName === otherNormalized) {
+        matchingIds.push(other.id)
+        matchType = "exact name"
+        processed.add(other.id)
+        continue
+      }
+
+      // Same domain
+      if (domain && otherDomain && domain === otherDomain) {
+        matchingIds.push(other.id)
+        matchType = matchType || "same website"
+        processed.add(other.id)
+        continue
+      }
+
+      // High similarity (>85%)
+      const similarity = calculateSimilarity(normalizedName, otherNormalized)
+      if (similarity > 0.85) {
+        matchingIds.push(other.id)
+        matchType = matchType || `similar (${Math.round(similarity * 100)}%)`
+        processed.add(other.id)
+        continue
+      }
     }
-    nameMap.get(normalizedName)!.push(outlet.id)
-  }
 
-  const duplicates: Array<{ name: string; ids: string[]; count: number }> = []
-
-  for (const [name, ids] of nameMap.entries()) {
-    if (ids.length > 1) {
-      // Find the original name (not normalized)
-      const originalName = mediaOutlets.find((o) => o.name.toLowerCase().trim() === name)?.name || name
+    if (matchingIds.length > 1) {
       duplicates.push({
-        name: originalName,
-        ids,
-        count: ids.length,
+        name: outlet.name,
+        ids: matchingIds,
+        count: matchingIds.length,
+        matchType: matchType || "exact name",
       })
+      processed.add(outlet.id)
     }
   }
 
   return duplicates
 }
 
+// Updated removeDuplicates to use findAllDuplicates
 export function removeDuplicates(): {
   removed: number
   duplicatesFound: Array<{ name: string; kept: string; removed: string[] }>
 } {
-  const nameMap = new Map<string, number[]>()
-
-  // Find indices of all outlets, grouped by normalized name
-  for (let i = 0; i < mediaOutlets.length; i++) {
-    const normalizedName = mediaOutlets[i].name.toLowerCase().trim()
-    if (!nameMap.has(normalizedName)) {
-      nameMap.set(normalizedName, [])
-    }
-    nameMap.get(normalizedName)!.push(i)
-  }
-
+  const duplicates = findAllDuplicates()
   const duplicatesFound: Array<{ name: string; kept: string; removed: string[] }> = []
-  const indicesToRemove: number[] = []
+  const idsToRemove = new Set<string>()
 
-  for (const [name, indices] of nameMap.entries()) {
-    if (indices.length > 1) {
-      // Keep the first one (lowest index), remove the rest
-      const keepIndex = indices[0]
-      const removeIndices = indices.slice(1)
-      indicesToRemove.push(...removeIndices)
+  for (const dup of duplicates) {
+    // Keep the first ID, remove the rest
+    const [keepId, ...removeIds] = dup.ids
+    removeIds.forEach((id) => idsToRemove.add(id))
 
-      const keptOutlet = mediaOutlets[keepIndex]
-      const removedIds = removeIndices.map((i) => mediaOutlets[i].id)
-
-      duplicatesFound.push({
-        name: keptOutlet.name,
-        kept: keptOutlet.id,
-        removed: removedIds,
-      })
-    }
+    duplicatesFound.push({
+      name: dup.name,
+      kept: keepId,
+      removed: removeIds,
+    })
   }
 
-  // Sort indices in descending order to remove from end first (preserves indices)
-  indicesToRemove.sort((a, b) => b - a)
+  // Actually remove the duplicates from the array
+  const initialCount = mediaOutlets.length
+  mediaOutlets = mediaOutlets.filter((outlet) => !idsToRemove.has(outlet.id))
+  const removedCount = initialCount - mediaOutlets.length
 
-  // Remove duplicates
-  for (const index of indicesToRemove) {
-    mediaOutlets.splice(index, 1)
-  }
+  console.log(`[v0] Removed ${removedCount} duplicate outlets. New total: ${mediaOutlets.length}`)
 
   return {
-    removed: indicesToRemove.length,
+    removed: removedCount,
     duplicatesFound,
   }
 }
@@ -222,7 +297,7 @@ export function removeOutletById(id: string): boolean {
 }
 
 // Calculations: TV primetime × 30 days, digital monthly visitors, print circulation × 30
-export const mediaOutlets: MediaOutlet[] = [
+export let mediaOutlets: MediaOutlet[] = [
   // ===== UNITED STATES - TRADITIONAL MEDIA =====
   {
     id: "msnbc",
