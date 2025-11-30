@@ -134,12 +134,20 @@ export async function POST(request: Request) {
               }
             }
 
-            // Fallback to Google Favicon
+            // Fallback to Google Favicon - validate it actually works
             if (!newLogoUrl && outlet.website) {
               try {
                 const domain = new URL(outlet.website).hostname
-                newLogoUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
-                source = "google-favicon"
+                const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
+                // Validate the favicon actually exists
+                const response = await fetch(faviconUrl, {
+                  method: "HEAD",
+                  signal: AbortSignal.timeout(3000),
+                })
+                if (response.ok) {
+                  newLogoUrl = faviconUrl
+                  source = "google-favicon"
+                }
               } catch {
                 // Google favicon failed
               }
