@@ -97,6 +97,10 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6))
+              if (!data || typeof data.type !== "string") {
+                console.log("[v0] Skipping invalid event data:", data)
+                continue
+              }
               console.log("[v0] Received event:", data.type, data)
 
               if (data.type === "progress") {
