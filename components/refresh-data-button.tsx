@@ -106,6 +106,7 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
 
       const decoder = new TextDecoder()
       let buffer = ""
+      let receivedComplete = false
 
       while (true) {
         if (signal.aborted) {
@@ -115,7 +116,22 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
 
         const { done, value } = await reader.read()
         if (done) {
-          console.log("[v0] Stream done")
+          console.log("[v0] Stream done, receivedComplete:", receivedComplete)
+          if (!receivedComplete && !signal.aborted) {
+            setProgress(100)
+            setIsComplete(true)
+            setCurrentStep("Complete!")
+            setSteps((prev) =>
+              prev.map((s) => (s.status === "loading" || s.status === "pending" ? { ...s, status: "success" } : s)),
+            )
+            toast({
+              title: "Data refreshed",
+              description: "Data has been updated. Reloading page...",
+            })
+            setTimeout(() => {
+              window.location.reload()
+            }, 2000)
+          }
           break
         }
 
@@ -144,6 +160,7 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
                   ),
                 )
               } else if (data.type === "complete") {
+                receivedComplete = true
                 setProgress(100)
                 setIsComplete(true)
                 setCurrentStep("Complete!")

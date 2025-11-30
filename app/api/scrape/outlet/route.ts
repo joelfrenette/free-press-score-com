@@ -13,6 +13,21 @@ import type { MediaOutlet } from "@/lib/types"
 
 export const maxDuration = 60
 
+async function saveWithTimeout(outlets: MediaOutlet[], timeoutMs = 10000): Promise<boolean> {
+  try {
+    const savePromise = saveOutletsToBlob(outlets)
+    const timeoutPromise = new Promise<{ success: false }>((_, reject) =>
+      setTimeout(() => reject(new Error("Save timeout")), timeoutMs),
+    )
+
+    const result = await Promise.race([savePromise, timeoutPromise])
+    return result.success
+  } catch (error) {
+    console.error("[v0] Save with timeout failed:", error)
+    return false
+  }
+}
+
 // Refresh all data for a single outlet
 export async function POST(request: NextRequest) {
   try {
@@ -147,6 +162,7 @@ export async function POST(request: NextRequest) {
                   const updatedOutlet = updatedOutlets?.find((o: MediaOutlet) => o.id === outletId)
                   if (updatedOutlet?.ownership) {
                     updates.ownership = updatedOutlet.ownership
+                    updates.lastUpdated = new Date().toISOString()
                     latestOutlets = updatedOutlets
                     stepSuccess = true
                   }
@@ -166,6 +182,7 @@ export async function POST(request: NextRequest) {
                     updates.funding = updatedOutlet.funding
                     updates.sponsors = updatedOutlet.sponsors
                     updates.stakeholders = updatedOutlet.stakeholders
+                    updates.lastUpdated = new Date().toISOString()
                     latestOutlets = updatedOutlets
                     stepSuccess = true
                   }
@@ -185,6 +202,7 @@ export async function POST(request: NextRequest) {
                     updates.lawsuits = updatedOutlet.lawsuits
                     updates.retractions = updatedOutlet.retractions
                     updates.scandals = updatedOutlet.scandals
+                    updates.lastUpdated = new Date().toISOString()
                     latestOutlets = updatedOutlets
                     stepSuccess = true
                   }
@@ -203,6 +221,7 @@ export async function POST(request: NextRequest) {
                   if (updatedOutlet) {
                     updates.audienceData = updatedOutlet.audienceData
                     updates.metrics = updatedOutlet.metrics
+                    updates.lastUpdated = new Date().toISOString()
                     latestOutlets = updatedOutlets
                     stepSuccess = true
                   }
@@ -218,6 +237,7 @@ export async function POST(request: NextRequest) {
                   await saveOutlets()
                   const updatedOutlets = getOutlets()
                   if (updatedOutlets) {
+                    updates.lastUpdated = new Date().toISOString()
                     latestOutlets = updatedOutlets
                   }
                   stepSuccess = true
@@ -257,14 +277,9 @@ export async function POST(request: NextRequest) {
           message: "Recalculating Free Press Score...",
         })
 
-        console.log("[v0] Starting score recalculation...")
-
         let scoresSuccess = false
-        let scoresError = ""
-
         try {
           const finalOutlet = latestOutlets?.find((o: MediaOutlet) => o.id === outletId)
-          console.log("[v0] Found outlet for score calc:", finalOutlet?.name)
 
           if (finalOutlet) {
             // Recalculate scores based on updated data
@@ -292,41 +307,22 @@ export async function POST(request: NextRequest) {
             updates.freePressScore = freePressScore
             updates.lastUpdated = new Date().toISOString()
 
-            console.log("[v0] Calculated new scores:", {
-              factCheckScore,
-              editorialScore,
-              transparencyScore,
-              freePressScore,
-            })
-
             const outletIndex = latestOutlets.findIndex((o: MediaOutlet) => o.id === outletId)
             if (outletIndex !== -1) {
               latestOutlets[outletIndex] = { ...latestOutlets[outletIndex], ...updates }
-              console.log("[v0] Saving updated outlets to blob...")
-              await saveOutletsToBlob(latestOutlets)
-              console.log("[v0] Saved successfully")
               scoresSuccess = true
             }
-          } else {
-            scoresError = "Outlet not found in data"
-            console.log("[v0] Outlet not found for score calculation")
           }
         } catch (error) {
           console.error("[v0] Error recalculating scores:", error)
-          scoresError = error instanceof Error ? error.message : "Failed to recalculate scores"
         }
-
-        console.log("[v0] Sending scores step_complete event...")
 
         sendEvent({
           type: "step_complete",
           step: "scores",
           label: "Recalculating Scores",
           success: scoresSuccess,
-          error: scoresError || undefined,
         })
-
-        console.log("[v0] Sending complete event...")
 
         sendEvent({
           type: "complete",
@@ -335,7 +331,10 @@ export async function POST(request: NextRequest) {
           updates: Object.keys(updates),
         })
 
-        console.log("[v0] Closing stream...")
+        saveWithTimeout(latestOutlets, 8000).then((saved) => {
+          console.log("[v0] Final save result:", saved ? "success" : "timeout/failed")
+        })
+
         controller.close()
       },
     })
