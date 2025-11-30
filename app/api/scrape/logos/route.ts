@@ -222,12 +222,9 @@ export async function POST(request: Request) {
         if (updatedOutletsMap.size > 0) {
           try {
             const finalOutlets = allOutlets.map((o) => updatedOutletsMap.get(o.id) || o)
-            await Promise.race([
-              saveOutletsToBlob(finalOutlets),
-              new Promise((_, reject) => setTimeout(() => reject(new Error("Blob save timeout")), 30000)),
-            ])
+            await saveOutletsToBlob(finalOutlets)
           } catch (saveError) {
-            console.error("[v0] Blob save error (non-fatal):", saveError)
+            console.error("[v0] Blob save error:", saveError)
             // Continue to send completion event even if save fails
           }
         }
