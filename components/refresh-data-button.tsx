@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { RefreshCw, CheckCircle, XCircle, Loader2 } from "lucide-react"
+import { RefreshCw, CheckCircle, XCircle, Loader2, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
@@ -27,6 +27,7 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
   const [currentStep, setCurrentStep] = useState("")
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [steps, setSteps] = useState<StepStatus[]>([
+    { name: "logo", label: "Logo", status: "pending" },
     { name: "ownership", label: "Ownership", status: "pending" },
     { name: "funding", label: "Funding", status: "pending" },
     { name: "legal", label: "Legal Cases", status: "pending" },
@@ -37,12 +38,15 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
   const [isComplete, setIsComplete] = useState(false)
   const { toast } = useToast()
 
+  const abortControllerRef = useRef<AbortController | null>(null)
+
   const resetState = () => {
     setProgress(0)
     setCurrentStep("Starting...")
     setIsComplete(false)
     setErrorMessage(null)
     setSteps([
+      { name: "logo", label: "Logo", status: "pending" },
       { name: "ownership", label: "Ownership", status: "pending" },
       { name: "funding", label: "Funding", status: "pending" },
       { name: "legal", label: "Legal Cases", status: "pending" },
@@ -52,10 +56,30 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
     ])
   }
 
+  const handleCancel = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    setIsLoading(false)
+    setShowDialog(false)
+
+    // Show toast if cancelled during loading
+    if (isLoading && !isComplete && !errorMessage) {
+      toast({
+        title: "Refresh cancelled",
+        description: "The data refresh was cancelled. Some data may have been partially updated.",
+      })
+    }
+  }
+
   const handleRefresh = async () => {
     resetState()
     setShowDialog(true)
     setIsLoading(true)
+
+    abortControllerRef.current = new AbortController()
+    const signal = abortControllerRef.current.signal
 
     console.log("[v0] Starting refresh for outlet:", outletId)
 
@@ -64,6 +88,7 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ outletId }),
+        signal, // Add abort signal
       })
 
       console.log("[v0] Response status:", response.status)
@@ -83,6 +108,11 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
       let buffer = ""
 
       while (true) {
+        if (signal.aborted) {
+          reader.cancel()
+          break
+        }
+
         const { done, value } = await reader.read()
         if (done) {
           console.log("[v0] Stream done")
@@ -138,6 +168,11 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
         }
       }
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        console.log("[v0] Refresh aborted by user")
+        return
+      }
+
       console.log("[v0] Refresh error:", error)
       setErrorMessage(error instanceof Error ? error.message : "Failed to refresh data")
       setCurrentStep("Error occurred")
@@ -148,6 +183,7 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
       })
     } finally {
       setIsLoading(false)
+      abortControllerRef.current = null
     }
   }
 
@@ -165,8 +201,8 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
   }
 
   const handleDialogChange = (open: boolean) => {
-    if (!open && (errorMessage || isComplete || !isLoading)) {
-      setShowDialog(false)
+    if (!open) {
+      handleCancel()
     }
   }
 
@@ -179,6 +215,14 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
 
       <Dialog open={showDialog} onOpenChange={handleDialogChange}>
         <DialogContent className="sm:max-w-md">
+          <button
+            onClick={handleCancel}
+            className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <RefreshCw className={`h-5 w-5 ${isLoading && !isComplete && !errorMessage ? "animate-spin" : ""}`} />
@@ -231,13 +275,18 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
               ))}
             </div>
 
-            {errorMessage && (
-              <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {isLoading && !isComplete && (
+                <Button variant="outline" size="sm" onClick={handleCancel}>
+                  Cancel
+                </Button>
+              )}
+              {(errorMessage || isComplete) && (
                 <Button variant="outline" size="sm" onClick={() => setShowDialog(false)}>
                   Close
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

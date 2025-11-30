@@ -317,92 +317,68 @@ async function scrapeWebsiteWithScrapingBee(url: string): Promise<{ html: string
       return null
     }
 
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
+    const pageTitle = titleMatch ? titleMatch[1].trim().toLowerCase() : ""
+
+    // If title is EXACTLY "404" or contains clear 404 indicators, it's an error page
+    const titleIs404 =
+      pageTitle === "404" ||
+      pageTitle.startsWith("404 ") ||
+      pageTitle.includes("page not found") ||
+      pageTitle.includes("not found") ||
+      pageTitle.includes("error 404") ||
+      pageTitle.includes("can't find") ||
+      pageTitle.includes("couldn't find")
+
+    if (titleIs404) {
+      console.log(`[v0] ScrapingBee detected 404 page for ${normalizedUrl} (title: "${pageTitle}") - skipping`)
+      return null
+    }
+
+    // Strong error indicators - phrases that ONLY appear on error pages
     const strongErrorIndicators = [
       "We can't find that page",
       "we can't find that page",
       "Page Not Found",
-      "Page not found",
-      "Error 404",
-      "<title>404",
-      "<title>Page Not Found",
-      'data-layout="basic-center-narrow"', // Reuters specific 404 layout
       "we seem to have lost this page",
       "This page doesn't exist",
       "Sorry, we couldn't find",
       "The page you're looking for",
-      "page you requested",
+      "page you requested could not be found",
+      "Something has gone wrong",
+      "stumbled upon our 404 page",
     ]
 
-    // Check strong indicators first - these should ALWAYS trigger regardless of page size
+    // Check strong indicators - these should ALWAYS trigger regardless of page size
     const hasStrongError = strongErrorIndicators.some((indicator) => html.includes(indicator))
     if (hasStrongError) {
       console.log(`[v0] ScrapingBee detected error page for ${normalizedUrl} (strong indicator match) - skipping`)
       return null
     }
 
-    const errorIndicators = [
-      "Page Unavailable",
-      "page unavailable",
-      "404",
-      "Not Found",
-      "doesn't exist",
-      "does not exist",
-      "no longer available",
-      "page isn't available",
-      "couldn't find",
-      "could not find",
-      "error404",
-      "page-not-found",
-      "page-404",
-      "notfound",
-      'class="404"',
-      'id="404"',
-      "we couldn't find",
-      "requested page",
-      "no results found",
-      "content not found",
-      "article not found",
-      "resource not found",
-      "Oops!",
-      "Something went wrong",
-      "errorpage",
-      'content="404',
-      "errortype",
-    ]
-
-    const lowerHtml = html.toLowerCase()
-
-    // Check title tag specifically for error indicators
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
-    const pageTitle = titleMatch ? titleMatch[1].toLowerCase() : ""
-    const titleHasError = ["404", "not found", "unavailable", "error", "oops", "can't find", "couldn't find"].some(
-      (e) => pageTitle.includes(e),
-    )
-
-    // Check body class for error pages
+    // Check body class for explicit 404/error pages
     const bodyClassMatch = html.match(/<body[^>]*class="([^"]+)"/i)
     const bodyClass = bodyClassMatch ? bodyClassMatch[1].toLowerCase() : ""
-    const bodyHasErrorClass = ["404", "error", "not-found", "notfound"].some((e) => bodyClass.includes(e))
+    const bodyHasErrorClass = bodyClass.includes("page-404") || bodyClass.includes("error-page") || bodyClass === "404"
 
-    const metaErrorPage = html.includes('name="errorpage"') || html.includes('name="errortype"')
-
-    const hasErrorIndicator = errorIndicators.some((indicator) => lowerHtml.includes(indicator.toLowerCase()))
-
-    // If title or body class indicates error, or multiple error indicators found
-    if (titleHasError || bodyHasErrorClass || metaErrorPage) {
-      console.log(
-        `[v0] ScrapingBee detected error/404 page for ${normalizedUrl} (title: "${pageTitle}", bodyClass: ${bodyHasErrorClass}, metaError: ${metaErrorPage}) - skipping`,
-      )
+    if (bodyHasErrorClass) {
+      console.log(`[v0] ScrapingBee detected error page for ${normalizedUrl} (body class: ${bodyClass}) - skipping`)
       return null
     }
 
-    // For weak indicators, still check size to avoid false positives on legitimate pages
-    if (hasErrorIndicator && html.length < 100000) {
-      console.log(
-        `[v0] ScrapingBee detected possible error page for ${normalizedUrl} (weak indicator match) - skipping`,
-      )
+    // Check meta tags for explicit error indicators
+    const metaErrorPage =
+      html.includes('name="errorpage"') ||
+      html.includes('name="pagetype" content="404"') ||
+      html.includes('prism.section" content="404"')
+
+    if (metaErrorPage) {
+      console.log(`[v0] ScrapingBee detected error page for ${normalizedUrl} (meta tag) - skipping`)
       return null
     }
+
+    // The title, body class, and strong indicator checks are sufficient
+    // Random "404" text in navigation menus shouldn't trigger a false positive
 
     console.log(`[v0] ScrapingBee scraped ${html.length} bytes from ${normalizedUrl}`)
     return { html, success: true }
@@ -975,6 +951,12 @@ export async function scrapeOwnershipData(
     wsj: ["https://www.dowjones.com/about/", "https://www.wsj.com/about-us"],
     "wall street journal": ["https://www.dowjones.com/about/"],
     "fox news": ["https://www.foxcorporation.com/", "https://press.foxnews.com/about/"],
+    "fox business": [
+      "https://www.foxcorporation.com/",
+      "https://press.foxbusiness.com/",
+      "https://www.foxbusiness.com/about-us",
+    ],
+    "fox business network": ["https://www.foxcorporation.com/", "https://press.foxbusiness.com/"],
     cnn: ["https://www.warnermedia.com/", "https://edition.cnn.com/about"],
     msnbc: ["https://www.nbcuniversal.com/", "https://www.msnbc.com/msnbc/about"],
     bbc: ["https://www.bbc.com/aboutthebbc", "https://www.bbc.co.uk/aboutthebbc"],
@@ -1006,6 +988,10 @@ export async function scrapeOwnershipData(
     "the hill": ["https://thehill.com/about/"],
     npr: ["https://www.npr.org/about/", "https://www.npr.org/about-npr/"],
     pbs: ["https://www.pbs.org/about/", "https://www.pbs.org/about/corporate-information/"],
+    forbes: ["https://www.forbes.com/connect/about/", "https://www.forbesmagazine.com/"],
+    bloomberg: ["https://www.bloomberg.com/company/", "https://www.bloombergmedia.com/"],
+    "business insider": ["https://www.businessinsider.com/about", "https://www.axelspringer.com/"],
+    cnbc: ["https://www.nbcuniversal.com/", "https://www.cnbc.com/about/"],
   }
 
   function getKnownAboutUrls(outletName: string): string[] {

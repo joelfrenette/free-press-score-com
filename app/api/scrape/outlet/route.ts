@@ -6,6 +6,7 @@ import {
   scrapeLegalCases,
   scrapeAudienceData,
   scrapeOutletData,
+  searchImagesWithSERP,
 } from "@/lib/data-scraping"
 import { saveOutlets, getOutlets } from "@/lib/mock-data"
 import type { MediaOutlet } from "@/lib/types"
@@ -32,6 +33,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Outlet not found" }, { status: 404 })
     }
 
+    let latestOutlets = outlets
+
     // Create SSE stream for progress updates
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
@@ -40,12 +43,13 @@ export async function POST(request: NextRequest) {
           try {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
           } catch (e) {
-            // Controller might be closed
+            console.error("[v0] Failed to send event:", e)
           }
         }
 
         const updates: Partial<MediaOutlet> = {}
         const steps = [
+          { name: "logo", label: "Logo" },
           { name: "ownership", label: "Ownership" },
           { name: "funding", label: "Funding" },
           { name: "legal", label: "Legal Cases" },
@@ -69,7 +73,70 @@ export async function POST(request: NextRequest) {
           let stepError = ""
 
           try {
-            if (step.name === "ownership") {
+            if (step.name === "logo") {
+              try {
+                // Use the same logic as the /api/scrape/logos route
+                let newLogoUrl: string | null = null
+
+                // Try Clearbit first
+                if (outlet.website) {
+                  try {
+                    const domain = new URL(outlet.website).hostname.replace("www.", "")
+                    const clearbitUrl = `https://logo.clearbit.com/${domain}`
+                    const response = await fetch(clearbitUrl, { method: "HEAD", signal: AbortSignal.timeout(2000) })
+                    if (response.ok) {
+                      newLogoUrl = clearbitUrl
+                    }
+                  } catch {
+                    // Clearbit failed, continue to next fallback
+                  }
+                }
+
+                // Try SERP image search
+                if (!newLogoUrl) {
+                  try {
+                    const images = await searchImagesWithSERP(`${outlet.name} official logo transparent png`, {
+                      num: 3,
+                    })
+
+                    if (images && images.length > 0) {
+                      for (const image of images) {
+                        if (image.thumbnail) {
+                          newLogoUrl = image.thumbnail
+                          break
+                        }
+                        const blockedDomains = ["seeklogo.com", "logowik.com", "brandlogos.net", "logopng.com"]
+                        const isBlocked = blockedDomains.some((domain) => image.original?.includes(domain))
+                        if (!isBlocked && image.original) {
+                          newLogoUrl = image.original
+                          break
+                        }
+                      }
+                    }
+                  } catch {
+                    // SERP failed, continue
+                  }
+                }
+
+                // Fallback to Google Favicon
+                if (!newLogoUrl && outlet.website) {
+                  try {
+                    const domain = new URL(outlet.website).hostname
+                    newLogoUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
+                  } catch {
+                    // Favicon URL generation failed
+                  }
+                }
+
+                if (newLogoUrl) {
+                  updates.logo = newLogoUrl
+                  stepSuccess = true
+                }
+              } catch (e) {
+                stepError = e instanceof Error ? e.message : "Failed to fetch logo"
+                console.log(`[v0] Logo scraping error (non-fatal):`, stepError)
+              }
+            } else if (step.name === "ownership") {
               try {
                 const results = await scrapeOwnershipData([
                   { id: outlet.id, name: outlet.name, website: outlet.website },
@@ -80,6 +147,7 @@ export async function POST(request: NextRequest) {
                   const updatedOutlet = updatedOutlets?.find((o: MediaOutlet) => o.id === outletId)
                   if (updatedOutlet?.ownership) {
                     updates.ownership = updatedOutlet.ownership
+                    latestOutlets = updatedOutlets
                     stepSuccess = true
                   }
                 }
@@ -98,6 +166,7 @@ export async function POST(request: NextRequest) {
                     updates.funding = updatedOutlet.funding
                     updates.sponsors = updatedOutlet.sponsors
                     updates.stakeholders = updatedOutlet.stakeholders
+                    latestOutlets = updatedOutlets
                     stepSuccess = true
                   }
                 }
@@ -116,6 +185,7 @@ export async function POST(request: NextRequest) {
                     updates.lawsuits = updatedOutlet.lawsuits
                     updates.retractions = updatedOutlet.retractions
                     updates.scandals = updatedOutlet.scandals
+                    latestOutlets = updatedOutlets
                     stepSuccess = true
                   }
                 }
@@ -133,6 +203,7 @@ export async function POST(request: NextRequest) {
                   if (updatedOutlet) {
                     updates.audienceData = updatedOutlet.audienceData
                     updates.metrics = updatedOutlet.metrics
+                    latestOutlets = updatedOutlets
                     stepSuccess = true
                   }
                 }
@@ -145,6 +216,10 @@ export async function POST(request: NextRequest) {
                 const generalData = await scrapeOutletData(outletId)
                 if (generalData?.data) {
                   await saveOutlets()
+                  const updatedOutlets = getOutlets()
+                  if (updatedOutlets) {
+                    latestOutlets = updatedOutlets
+                  }
                   stepSuccess = true
                 }
               } catch (e) {
@@ -174,7 +249,6 @@ export async function POST(request: NextRequest) {
           completed++
         }
 
-        // Recalculate scores
         sendEvent({
           type: "progress",
           step: "scores",
@@ -183,43 +257,77 @@ export async function POST(request: NextRequest) {
           message: "Recalculating Free Press Score...",
         })
 
-        const finalOutlets = getOutlets()
-        const finalOutlet = finalOutlets?.find((o: MediaOutlet) => o.id === outletId)
+        console.log("[v0] Starting score recalculation...")
 
-        if (finalOutlet) {
-          // Recalculate scores based on updated data
-          let factCheckScore = finalOutlet.factCheckAccuracy || 75
-          const editorialScore = finalOutlet.editorialIndependence || 75
-          const transparencyScore = finalOutlet.transparency || 75
+        let scoresSuccess = false
+        let scoresError = ""
 
-          // Adjust based on legal cases
-          if (finalOutlet.lawsuits && finalOutlet.lawsuits.length > 0) {
-            const activeCases = finalOutlet.lawsuits.filter((l: any) => l.status === "active").length
-            factCheckScore = Math.max(50, factCheckScore - activeCases * 5)
+        try {
+          const finalOutlet = latestOutlets?.find((o: MediaOutlet) => o.id === outletId)
+          console.log("[v0] Found outlet for score calc:", finalOutlet?.name)
+
+          if (finalOutlet) {
+            // Recalculate scores based on updated data
+            let factCheckScore = finalOutlet.factCheckAccuracy || 75
+            const editorialScore = finalOutlet.editorialIndependence || 75
+            const transparencyScore = finalOutlet.transparency || 75
+
+            // Adjust based on legal cases
+            if (finalOutlet.lawsuits && finalOutlet.lawsuits.length > 0) {
+              const activeCases = finalOutlet.lawsuits.filter((l: any) => l.status === "active").length
+              factCheckScore = Math.max(50, factCheckScore - activeCases * 5)
+            }
+
+            // Adjust based on retractions
+            if (finalOutlet.retractions && finalOutlet.retractions.length > 5) {
+              factCheckScore = Math.max(50, factCheckScore - 5)
+            }
+
+            // Calculate overall Free Press Score
+            const freePressScore = Math.round(factCheckScore * 0.4 + editorialScore * 0.3 + transparencyScore * 0.3)
+
+            updates.factCheckAccuracy = factCheckScore
+            updates.editorialIndependence = editorialScore
+            updates.transparency = transparencyScore
+            updates.freePressScore = freePressScore
+            updates.lastUpdated = new Date().toISOString()
+
+            console.log("[v0] Calculated new scores:", {
+              factCheckScore,
+              editorialScore,
+              transparencyScore,
+              freePressScore,
+            })
+
+            const outletIndex = latestOutlets.findIndex((o: MediaOutlet) => o.id === outletId)
+            if (outletIndex !== -1) {
+              latestOutlets[outletIndex] = { ...latestOutlets[outletIndex], ...updates }
+              console.log("[v0] Saving updated outlets to blob...")
+              await saveOutletsToBlob(latestOutlets)
+              console.log("[v0] Saved successfully")
+              scoresSuccess = true
+            }
+          } else {
+            scoresError = "Outlet not found in data"
+            console.log("[v0] Outlet not found for score calculation")
           }
-
-          // Adjust based on retractions
-          if (finalOutlet.retractions && finalOutlet.retractions.length > 5) {
-            factCheckScore = Math.max(50, factCheckScore - 5)
-          }
-
-          // Calculate overall Free Press Score
-          const freePressScore = Math.round(factCheckScore * 0.4 + editorialScore * 0.3 + transparencyScore * 0.3)
-
-          updates.factCheckAccuracy = factCheckScore
-          updates.editorialIndependence = editorialScore
-          updates.transparency = transparencyScore
-          updates.freePressScore = freePressScore
-          updates.lastUpdated = new Date().toISOString()
-
-          const outletIndex = finalOutlets.findIndex((o: MediaOutlet) => o.id === outletId)
-          if (outletIndex !== -1) {
-            finalOutlets[outletIndex] = { ...finalOutlets[outletIndex], ...updates }
-            await saveOutletsToBlob(finalOutlets)
-          }
+        } catch (error) {
+          console.error("[v0] Error recalculating scores:", error)
+          scoresError = error instanceof Error ? error.message : "Failed to recalculate scores"
         }
 
-        // Send completion
+        console.log("[v0] Sending scores step_complete event...")
+
+        sendEvent({
+          type: "step_complete",
+          step: "scores",
+          label: "Recalculating Scores",
+          success: scoresSuccess,
+          error: scoresError || undefined,
+        })
+
+        console.log("[v0] Sending complete event...")
+
         sendEvent({
           type: "complete",
           success: true,
@@ -227,6 +335,7 @@ export async function POST(request: NextRequest) {
           updates: Object.keys(updates),
         })
 
+        console.log("[v0] Closing stream...")
         controller.close()
       },
     })
