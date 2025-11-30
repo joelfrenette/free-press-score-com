@@ -1,24 +1,24 @@
-import { notFound, redirect } from 'next/navigation';
-import { checkIsAdmin } from '@/lib/admin-actions';
-import { mediaOutlets } from '@/lib/mock-data';
-import { OutletEditForm } from '@/components/outlet-edit-form';
+import { notFound, redirect } from "next/navigation"
+import { checkIsAdmin } from "@/lib/admin-actions"
+import { mediaOutlets } from "@/lib/media-outlet-data"
+import { OutletEditForm } from "@/components/outlet-edit-form"
 
 interface EditOutletPageProps {
-  params: Promise<{ id: string }>;
+  params: Promise<{ id: string }>
 }
 
 export default async function EditOutletPage({ params }: EditOutletPageProps) {
-  const isAdmin = await checkIsAdmin();
-  
+  const isAdmin = await checkIsAdmin()
+
   if (!isAdmin) {
-    redirect('/admin/login');
+    redirect("/admin/login")
   }
 
-  const { id } = await params;
-  const outlet = mediaOutlets.find((o) => o.id === id);
+  const { id } = await params
+  const outlet = mediaOutlets.find((o) => o.id === id)
 
   if (!outlet) {
-    notFound();
+    notFound()
   }
 
   return (
@@ -28,5 +28,5 @@ export default async function EditOutletPage({ params }: EditOutletPageProps) {
         <OutletEditForm outlet={outlet} />
       </div>
     </main>
-  );
+  )
 }

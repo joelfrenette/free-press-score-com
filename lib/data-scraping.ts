@@ -1,4 +1,4 @@
-import { mediaOutlets, addOutlet, outletExists, updateOutlet, type MediaOutlet } from "./mock-data"
+import { mediaOutlets, addOutlet, outletExists, updateOutlet, type MediaOutlet } from "./media-outlet-data"
 
 // Types
 export interface OutletData {

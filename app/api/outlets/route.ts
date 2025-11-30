@@ -1,4 +1,4 @@
-import { mediaOutlets, loadOutlets, saveOutlets } from "@/lib/mock-data"
+import { mediaOutlets, loadOutlets, saveOutlets } from "@/lib/media-outlet-data"
 import { NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"

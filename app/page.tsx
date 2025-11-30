@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Filter, RefreshCw } from "lucide-react"
-import type { MediaOutlet } from "@/lib/mock-data"
+import type { MediaOutlet } from "@/lib/media-outlet-data"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 

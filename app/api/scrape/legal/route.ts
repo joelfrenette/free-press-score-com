@@ -1,5 +1,5 @@
 import { searchWithSERP, callAIWithCascade, parseJSONFromResponse } from "@/lib/data-scraping"
-import { getOutlets, updateOutlet } from "@/lib/mock-data"
+import { getOutlets, updateOutlet } from "@/lib/media-outlet-data"
 
 export async function POST(request: Request) {
   const { outlets: requestedOutlets, outletIds, stream = true } = await request.json()

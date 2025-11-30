@@ -8,7 +8,7 @@ import {
   scrapeOutletData,
   searchImagesWithSERP,
 } from "@/lib/data-scraping"
-import { saveOutlets, getOutlets } from "@/lib/mock-data"
+import { saveOutlets, getOutlets } from "@/lib/media-outlet-data"
 import type { MediaOutlet } from "@/lib/types"
 
 export const maxDuration = 60

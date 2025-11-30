@@ -156,6 +156,23 @@ export async function loadOutlets(): Promise<{ loaded: boolean; count: number; s
   }
 }
 
+export async function loadFromBlobOnce(): Promise<{ loaded: boolean; count: number }> {
+  try {
+    const { outlets } = await loadOutletsFromBlob()
+    if (outlets && outlets.length > 0) {
+      // Replace in-memory array with fresh blob data
+      mediaOutlets.length = 0
+      mediaOutlets.push(...outlets)
+      hasLoadedFromBlob = true
+      return { loaded: true, count: outlets.length }
+    }
+    return { loaded: false, count: mediaOutlets.length }
+  } catch (error) {
+    console.error("[v0] Failed to reload from Blob:", error)
+    return { loaded: false, count: mediaOutlets.length }
+  }
+}
+
 export function getLoadStatus(): { hasLoaded: boolean; count: number } {
   return { hasLoaded: hasLoadedFromBlob, count: mediaOutlets.length }
 }

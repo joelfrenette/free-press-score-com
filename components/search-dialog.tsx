@@ -1,47 +1,42 @@
-'use client';
+"use client"
 
-import { useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { mediaOutlets } from '@/lib/mock-data';
-import { getBiasLabel, getBiasColor } from '@/lib/utils';
-import { Search, TrendingUp } from 'lucide-react';
+import { useState, useMemo } from "react"
+import { useRouter } from "next/navigation"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { mediaOutlets } from "@/lib/media-outlet-data" // Updated import from mock-data to media-outlet-data
+import { getBiasLabel, getBiasColor } from "@/lib/utils"
+import { Search, TrendingUp } from "lucide-react"
 
 interface SearchDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }
 
 export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
-  const [query, setQuery] = useState('');
-  const router = useRouter();
+  const [query, setQuery] = useState("")
+  const router = useRouter()
 
   const filteredOutlets = useMemo(() => {
-    if (!query) return mediaOutlets;
+    if (!query) return mediaOutlets
 
-    const lowerQuery = query.toLowerCase();
+    const lowerQuery = query.toLowerCase()
     return mediaOutlets.filter(
       (outlet) =>
         outlet.name.toLowerCase().includes(lowerQuery) ||
         outlet.country.toLowerCase().includes(lowerQuery) ||
         outlet.description.toLowerCase().includes(lowerQuery) ||
-        getBiasLabel(outlet.biasScore).toLowerCase().includes(lowerQuery)
-    );
-  }, [query]);
+        getBiasLabel(outlet.biasScore).toLowerCase().includes(lowerQuery),
+    )
+  }, [query])
 
   const handleSelectOutlet = (id: string) => {
-    router.push(`/outlet/${id}`);
-    onOpenChange(false);
-    setQuery('');
-  };
+    router.push(`/outlet/${id}`)
+    onOpenChange(false)
+    setQuery("")
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -77,18 +72,14 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                       </div>
                       <div className="flex items-center gap-1">
                         <TrendingUp className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-sm font-bold text-foreground">
-                          {outlet.freePressScore}
-                        </span>
+                        <span className="text-sm font-bold text-foreground">{outlet.freePressScore}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary" className={`${getBiasColor(outlet.biasScore)} text-xs`}>
                         {getBiasLabel(outlet.biasScore)}
                       </Badge>
-                      <p className="line-clamp-1 text-xs text-muted-foreground">
-                        {outlet.description}
-                      </p>
+                      <p className="line-clamp-1 text-xs text-muted-foreground">{outlet.description}</p>
                     </div>
                   </button>
                 ))}
@@ -105,5 +96,5 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         </div>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

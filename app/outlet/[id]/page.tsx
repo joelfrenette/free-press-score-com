@@ -1,13 +1,15 @@
-import { notFound } from "next/navigation"
-import Image from "next/image"
+"use client"
+
 import Link from "next/link"
-import { mediaOutlets } from "@/lib/mock-data"
-import { Card } from "@/components/ui/card"
+import Image from "next/image"
+import useSWR from "swr"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { getBiasLabel, getBiasColor, getScoreColor } from "@/lib/utils"
+import type { MediaOutlet } from "@/lib/types"
 import {
   ArrowLeft,
   TrendingUp,
@@ -16,239 +18,289 @@ import {
   Scale,
   Flag,
   CheckCircle,
-  XCircle,
   Clock,
-  DollarSign,
+  ExternalLink,
+  Users,
   Building2,
+  Tv,
+  Newspaper,
+  Globe,
+  Mic,
+  Youtube,
+  Twitter,
+  RefreshCw,
   Eye,
 } from "lucide-react"
+import { useParams } from "next/navigation"
 import { RefreshDataButton } from "@/components/refresh-data-button"
-import { MediaTypeLink } from "@/components/media-type-link"
-import { checkIsAdmin } from "@/lib/admin-actions"
-import { OutletEditButton } from "@/components/outlet-edit-button"
 
-function formatTimestamp(dateString?: string) {
-  if (!dateString) return null
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
+function formatDate(dateString: string | undefined) {
+  if (!dateString) return "Unknown"
   const date = new Date(dateString)
-  if (isNaN(date.getTime())) return null
-  return date.toLocaleString("en-US", {
+  return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
   })
 }
 
-function LastUpdated({ date, className = "" }: { date?: string; className?: string }) {
-  const formatted = formatTimestamp(date)
-  if (!formatted) return null
-  return <span className={`text-xs text-muted-foreground ${className}`}>Updated: {formatted}</span>
+function formatShortDate(dateString: string | undefined) {
+  if (!dateString) return "Unknown"
+  const date = new Date(dateString)
+  return date.toLocaleDateString("en-US", {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+  })
 }
 
-interface OutletPageProps {
-  params: Promise<{ id: string }>
-}
-
-export async function generateStaticParams() {
-  return mediaOutlets.map((outlet) => ({
-    id: outlet.id,
-  }))
-}
-
-export default async function OutletPage({ params }: OutletPageProps) {
-  const { id } = await params
-  const outlet = mediaOutlets.find((o) => o.id === id)
-
-  if (!outlet) {
-    notFound()
+function getMediaTypeIcon(outlet: MediaOutlet) {
+  if (outlet.outletType === "influencer") {
+    if (outlet.platform === "youtube") return <Youtube className="h-5 w-5" />
+    if (outlet.platform === "podcast") return <Mic className="h-5 w-5" />
+    if (outlet.platform === "twitter") return <Twitter className="h-5 w-5" />
+    if (outlet.platform === "tiktok") return <Globe className="h-5 w-5" />
+    return <Globe className="h-5 w-5" />
   }
 
-  const isAdmin = await checkIsAdmin()
+  if (outlet.metrics?.type === "tv") return <Tv className="h-5 w-5" />
+  if (outlet.metrics?.type === "print") return <Newspaper className="h-5 w-5" />
+  if (outlet.metrics?.type === "podcast") return <Mic className="h-5 w-5" />
+  return <Globe className="h-5 w-5" />
+}
 
-  const getSourceUrl = () => {
-    if (outlet.outletType === "traditional") {
-      // For traditional outlets, we'd need to add their social media URLs to the data
-      return undefined
-    }
-    // For influencers, construct URLs based on platform
-    // This is simplified - in production you'd store these URLs in the database
-    return undefined
+function getOwnershipDetails(ownership: MediaOutlet["ownership"]) {
+  if (typeof ownership === "string") {
+    return { type: "Unknown", details: ownership }
   }
+  return ownership
+}
+
+function getFundingDetails(funding: MediaOutlet["funding"]) {
+  if (Array.isArray(funding)) {
+    return { sources: funding, details: funding.join(", ") }
+  }
+  return funding
+}
+
+export default function OutletDetailPage() {
+  const params = useParams()
+  const id = params.id as string
+
+  const { data, error, isLoading } = useSWR<{
+    outlets: MediaOutlet[]
+    total: number
+  }>("/api/outlets", fetcher)
+
+  const outlet = data?.outlets?.find((o) => o.id === id)
+
+  if (isLoading) {
+    return (
+      <main className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+          <p className="text-muted-foreground">Loading outlet details...</p>
+        </div>
+      </main>
+    )
+  }
+
+  if (error || !outlet) {
+    return (
+      <main className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-destructive" />
+          <h1 className="text-xl font-semibold mb-2">Outlet Not Found</h1>
+          <p className="text-muted-foreground mb-4">The media outlet you&apos;re looking for doesn&apos;t exist.</p>
+          <Button asChild>
+            <Link href="/">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Dashboard
+            </Link>
+          </Button>
+        </div>
+      </main>
+    )
+  }
+
+  const ownershipData = getOwnershipDetails(outlet.ownership)
+  const fundingData = getFundingDetails(outlet.funding)
+  const hasIssues = (outlet.lawsuits?.length ?? 0) > 0 || (outlet.scandals?.length ?? 0) > 0
 
   return (
     <main className="min-h-screen bg-background">
-      <div className="container mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
         {/* Back Button */}
-        <Link href="/">
-          <Button variant="ghost" className="mb-6 gap-2">
-            <ArrowLeft className="h-4 w-4" />
+        <Button variant="ghost" asChild className="mb-6">
+          <Link href="/">
+            <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Dashboard
-          </Button>
-        </Link>
+          </Link>
+        </Button>
 
-        {/* Header */}
-        <div className="mb-4">
-          <div className="mb-4 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            {/* Left side: Outlet info + 3 score cards */}
-            <div className="flex-1">
-              {/* Outlet logo, name, badges */}
-              <div className="flex items-start gap-4">
-                <div className="relative h-20 w-32 overflow-hidden rounded-lg bg-white shadow-sm">
-                  <Image
-                    src={outlet.logo || "/placeholder.svg"}
-                    alt={`${outlet.name} logo`}
-                    fill
-                    className="object-contain p-2"
-                  />
+        <Card className="mb-6">
+          <CardContent className="p-6">
+            <div className="flex flex-col lg:flex-row gap-6">
+              {/* Left Column: Header + Score Cards */}
+              <div className="flex-1">
+                {/* Header: Logo, name, badges */}
+                <div className="flex items-start gap-4 mb-6">
+                  {/* Logo */}
+                  <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-muted border">
+                    <Image
+                      src={outlet.logo || "/placeholder.svg"}
+                      alt={`${outlet.name} logo`}
+                      fill
+                      className="object-contain p-2"
+                    />
+                  </div>
+
+                  {/* Name and badges */}
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h1 className="text-2xl font-bold text-foreground">{outlet.name}</h1>
+                      {getMediaTypeIcon(outlet)}
+                      {outlet.description && (
+                        <Badge variant="outline" className="font-normal">
+                          {outlet.description}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Badge className={`${getBiasColor(outlet.biasScore)}`}>{getBiasLabel(outlet.biasScore)}</Badge>
+                      <Badge variant="secondary">{outlet.country}</Badge>
+                      <span className="text-sm text-muted-foreground">
+                        Updated: {formatShortDate(outlet.lastUpdated)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <div className="mb-2 flex items-center gap-3">
-                    <h1 className="text-3xl font-bold text-foreground">{outlet.name}</h1>
-                    {outlet.website && (
-                      <MediaTypeLink
-                        website={outlet.website}
-                        outletType={outlet.outletType}
-                        platform={outlet.platform}
-                        metricsType={outlet.metrics.type}
-                        outletName={outlet.name}
-                      />
-                    )}
-                    {outlet.description && (
-                      <Badge variant="outline" className="hidden md:inline-flex text-xs font-normal max-w-xs truncate">
-                        {outlet.description.length > 50
-                          ? outlet.description.substring(0, 50) + "..."
-                          : outlet.description}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="secondary" className={`${getBiasColor(outlet.biasScore)}`}>
-                      {getBiasLabel(outlet.biasScore)}
-                    </Badge>
-                    <Badge variant="outline">{outlet.country}</Badge>
-                    {outlet.outletType === "influencer" && outlet.platform && (
-                      <Badge variant="outline" className="capitalize">
-                        {outlet.platform}
-                      </Badge>
-                    )}
-                    <span className="text-sm text-muted-foreground">
-                      Updated: {new Date(outlet.lastUpdated).toLocaleDateString()}
-                    </span>
-                  </div>
+
+                {/* Three Score Cards - directly under header */}
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Card className="border shadow-sm">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2 text-sm font-medium mb-2">
+                        <CheckCircle className="h-4 w-4" />
+                        Fact-Check Accuracy
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className={`text-3xl font-bold ${getScoreColor(outlet.factCheckScore)}`}>
+                          {outlet.factCheckScore}
+                        </span>
+                        <span className="text-muted-foreground">/ 100</span>
+                      </div>
+                      <Progress value={outlet.factCheckScore} className="h-2 mt-2" />
+                      <div className="text-xs text-primary mt-2">Updated: {formatDate(outlet.lastUpdated)}</div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border shadow-sm">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2 text-sm font-medium mb-2">
+                        <Eye className="h-4 w-4" />
+                        Editorial Independence
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className={`text-3xl font-bold ${getScoreColor(outlet.editorialScore)}`}>
+                          {outlet.editorialScore}
+                        </span>
+                        <span className="text-muted-foreground">/ 100</span>
+                      </div>
+                      <Progress value={outlet.editorialScore} className="h-2 mt-2" />
+                      <div className="text-xs text-primary mt-2">Updated: {formatDate(outlet.lastUpdated)}</div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border shadow-sm">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2 text-sm font-medium mb-2">
+                        <FileText className="h-4 w-4" />
+                        Transparency
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className={`text-3xl font-bold ${getScoreColor(outlet.transparencyScore)}`}>
+                          {outlet.transparencyScore}
+                        </span>
+                        <span className="text-muted-foreground">/ 100</span>
+                      </div>
+                      <Progress value={outlet.transparencyScore} className="h-2 mt-2" />
+                      <div className="text-xs text-primary mt-2">Updated: {formatDate(outlet.lastUpdated)}</div>
+                    </CardContent>
+                  </Card>
                 </div>
               </div>
 
-              {/* 3 Score cards - moved here, under the outlet info */}
-              <div className="mt-4 grid gap-3 grid-cols-1 sm:grid-cols-3">
-                <Card className="p-3">
-                  <div className="mb-1 flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-xs font-semibold text-foreground">Fact-Check Accuracy</h3>
-                  </div>
-                  <div className="mb-1 flex items-end gap-1">
-                    <span className={`text-xl font-bold ${getScoreColor(outlet.factCheckAccuracy)}`}>
-                      {outlet.factCheckAccuracy}
-                    </span>
-                    <span className="mb-0.5 text-xs text-muted-foreground">/ 100</span>
-                  </div>
-                  <Progress value={outlet.factCheckAccuracy} className="h-1.5" />
-                  <LastUpdated date={outlet.lastUpdated} className="mt-1 block text-[10px]" />
-                </Card>
-
-                <Card className="p-3">
-                  <div className="mb-1 flex items-center gap-2">
-                    <Eye className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-xs font-semibold text-foreground">Editorial Independence</h3>
-                  </div>
-                  <div className="mb-1 flex items-end gap-1">
-                    <span className={`text-xl font-bold ${getScoreColor(outlet.editorialIndependence)}`}>
-                      {outlet.editorialIndependence}
-                    </span>
-                    <span className="mb-0.5 text-xs text-muted-foreground">/ 100</span>
-                  </div>
-                  <Progress value={outlet.editorialIndependence} className="h-1.5" />
-                  <LastUpdated date={outlet.lastUpdated} className="mt-1 block text-[10px]" />
-                </Card>
-
-                <Card className="p-3">
-                  <div className="mb-1 flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-xs font-semibold text-foreground">Transparency</h3>
-                  </div>
-                  <div className="mb-1 flex items-end gap-1">
-                    <span className={`text-xl font-bold ${getScoreColor(outlet.transparency)}`}>
-                      {outlet.transparency}
-                    </span>
-                    <span className="mb-0.5 text-xs text-muted-foreground">/ 100</span>
-                  </div>
-                  <Progress value={outlet.transparency} className="h-1.5" />
-                  <LastUpdated date={outlet.lastUpdated} className="mt-1 block text-[10px]" />
+              {/* Right Column: Free Press Score + Refresh Button */}
+              <div className="w-full lg:w-52 flex-shrink-0">
+                <Card className="border shadow-sm h-full">
+                  <CardContent className="p-4 flex flex-col h-full">
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground mb-2">
+                      <TrendingUp className="h-4 w-4" />
+                      Free Press Score
+                    </div>
+                    <div className={`text-5xl font-bold text-center ${getScoreColor(outlet.freePressScore)}`}>
+                      {outlet.freePressScore}
+                    </div>
+                    <div className="text-sm text-muted-foreground text-center">out of 100</div>
+                    <div className="text-xs text-primary text-center mt-2">
+                      Updated: {formatDate(outlet.lastUpdated)}
+                    </div>
+                    <div className="mt-auto pt-4">
+                      <RefreshDataButton outletId={outlet.id} />
+                    </div>
+                  </CardContent>
                 </Card>
               </div>
             </div>
+          </CardContent>
+        </Card>
 
-            {/* Right side: Free Press Score + Admin button + Refresh button */}
-            <div className="flex flex-col gap-3 lg:w-56">
-              {isAdmin && <OutletEditButton outletId={outlet.id} isAdmin={isAdmin} />}
-
-              <Card className="p-6 text-center">
-                <div className="mb-2 flex items-center justify-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-muted-foreground" />
-                  <span className="text-sm font-medium text-muted-foreground">Free Press Score</span>
-                </div>
-                <div className={`text-5xl font-bold ${getScoreColor(outlet.freePressScore)}`}>
-                  {outlet.freePressScore}
-                </div>
-                <div className="mt-1 text-sm text-muted-foreground">out of 100</div>
-                <LastUpdated date={outlet.lastUpdated} className="mt-2 block" />
-              </Card>
-
-              <RefreshDataButton outletId={outlet.id} />
+        {/* Bias Analysis Section */}
+        <Card className="mb-6">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Scale className="h-5 w-5" />
+                <h2 className="text-lg font-semibold">Bias Analysis</h2>
+              </div>
+              <span className="text-xs text-primary">Updated: {formatDate(outlet.lastUpdated)}</span>
             </div>
-          </div>
 
-          {outlet.description && <p className="text-sm text-muted-foreground md:hidden">{outlet.description}</p>}
-        </div>
-
-        {/* Bias Analysis - Added timestamp */}
-        <Card className="mb-8 p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Scale className="h-5 w-5 text-muted-foreground" />
-              <h2 className="text-xl font-bold text-foreground">Bias Analysis</h2>
-            </div>
-            <LastUpdated date={outlet.lastUpdated} />
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-medium text-muted-foreground">Political Lean</span>
-                <Badge variant="secondary" className={getBiasColor(outlet.biasScore)}>
+            {/* Political Lean */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">Political Lean</span>
+                <Badge variant="outline" className={getBiasColor(outlet.biasScore)}>
                   {getBiasLabel(outlet.biasScore)} ({outlet.biasScore > 0 ? "+" : ""}
                   {outlet.biasScore.toFixed(1)})
                 </Badge>
               </div>
-              <div className="relative h-8 w-full overflow-hidden rounded-lg bg-gradient-to-r from-[var(--far-left)] via-[var(--center-bias)] to-[var(--far-right)]">
+              {/* Bias gradient bar */}
+              <div className="relative h-4 rounded-full overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-gray-400 to-red-700" />
+                {/* Center marker */}
+                <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-white/50" />
+                {/* Position indicator */}
                 <div
-                  className="absolute top-0 h-full w-1 bg-foreground shadow-lg"
-                  style={{
-                    left: `${((outlet.biasScore + 2) / 4) * 100}%`,
-                    transform: "translateX(-50%)",
-                  }}
+                  className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full border-2 border-foreground shadow-md"
+                  style={{ left: `${((outlet.biasScore + 10) / 20) * 100}%` }}
                 />
               </div>
-              <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+              <div className="flex justify-between mt-1 text-xs text-muted-foreground">
                 <span>Far Left</span>
                 <span>Center</span>
                 <span>Far Right</span>
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg bg-muted p-4">
-              <span className="text-sm font-medium text-foreground">Perspective Coverage</span>
+            {/* Perspective Coverage */}
+            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <span className="text-sm">Perspective Coverage</span>
               <Badge variant={outlet.perspectives === "multiple" ? "default" : "secondary"}>
                 {outlet.perspectives === "multiple"
                   ? "Multiple Perspectives"
@@ -257,351 +309,268 @@ export default async function OutletPage({ params }: OutletPageProps) {
                     : "Single Perspective"}
               </Badge>
             </div>
-          </div>
+          </CardContent>
         </Card>
 
-        {/* Ownership & Funding - Added timestamp */}
-        <Card className="mb-8 p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-muted-foreground" />
-              <h2 className="text-xl font-bold text-foreground">Ownership & Funding</h2>
-            </div>
-            <LastUpdated
-              date={
-                typeof outlet.ownership === "object" && outlet.ownership?.verifiedDate
-                  ? outlet.ownership.verifiedDate
-                  : outlet.lastUpdated
-              }
-            />
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <h3 className="mb-2 text-sm font-medium text-muted-foreground">Ownership</h3>
-              {typeof outlet.ownership === "string" ? (
-                <p className="text-foreground">{outlet.ownership}</p>
-              ) : outlet.ownership ? (
-                <div className="space-y-2">
-                  <p className="text-foreground">{outlet.ownership.details || outlet.ownership.type}</p>
-                  {outlet.ownership.parent && (
-                    <p className="text-sm text-muted-foreground">
-                      <span className="font-medium">Parent Company:</span> {outlet.ownership.parent}
-                    </p>
-                  )}
-                  {outlet.ownership.ultimateOwner && (
-                    <p className="text-sm text-muted-foreground">
-                      <span className="font-medium">Ultimate Owner:</span> {outlet.ownership.ultimateOwner}
-                    </p>
-                  )}
-                  {outlet.ownership.recentChanges && (
-                    <p className="text-sm text-muted-foreground">
-                      <span className="font-medium">Recent Changes:</span> {outlet.ownership.recentChanges}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-foreground">Unknown</p>
-              )}
-            </div>
-
-            {/* Major Stakeholders */}
-            {outlet.stakeholders && outlet.stakeholders.length > 0 && (
-              <>
-                <Separator />
-                <div>
-                  <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                    Major Stakeholders & Ownership Structure
-                  </h3>
-                  <div className="space-y-3">
-                    {outlet.stakeholders.map((stakeholder, index) => (
-                      <div key={index} className="rounded-lg border border-border bg-muted/30 p-4">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1 min-w-0">
-                            <div className="mb-1 flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-foreground">{stakeholder.name}</span>
-                              <Badge variant="outline" className="text-xs">
-                                {stakeholder.stake}
-                              </Badge>
-                            </div>
-                            {stakeholder.entity && (
-                              <p className="text-xs text-muted-foreground mb-2">{stakeholder.entity}</p>
-                            )}
-                            <p className="text-sm text-muted-foreground">{stakeholder.description}</p>
-                          </div>
-                          <Badge
-                            variant="secondary"
-                            className={`shrink-0 text-xs ${
-                              stakeholder.politicalLean === "far-left"
-                                ? "bg-[var(--far-left)]/20 text-[var(--far-left)]"
-                                : stakeholder.politicalLean === "left"
-                                  ? "bg-[var(--left-bias)]/20 text-[var(--left-bias)]"
-                                  : stakeholder.politicalLean === "center"
-                                    ? "bg-[var(--center-bias)]/20 text-[var(--center-bias)]"
-                                    : stakeholder.politicalLean === "right"
-                                      ? "bg-[var(--right-bias)]/20 text-[var(--right-bias)]"
-                                      : stakeholder.politicalLean === "far-right"
-                                        ? "bg-[var(--far-right)]/20 text-[var(--far-right)]"
-                                        : ""
-                            }`}
-                          >
-                            {stakeholder.politicalLean === "unknown"
-                              ? "Unknown"
-                              : stakeholder.politicalLean
-                                  .split("-")
-                                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                                  .join(" ")}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Board Members */}
-            {outlet.boardMembers && outlet.boardMembers.length > 0 && (
-              <>
-                <Separator />
-                <div>
-                  <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                    Board of Directors & Key Leadership
-                  </h3>
-                  <div className="space-y-3">
-                    {outlet.boardMembers.map((member, index) => (
-                      <div key={index} className="rounded-lg border border-border bg-muted/30 p-4">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1 min-w-0">
-                            <div className="mb-1">
-                              <span className="font-semibold text-foreground">{member.name}</span>
-                            </div>
-                            <p className="mb-1 text-sm font-medium text-muted-foreground">{member.position}</p>
-                            <p className="text-xs text-muted-foreground mb-2">{member.background}</p>
-                            <p className="text-sm text-muted-foreground">{member.description}</p>
-                          </div>
-                          <Badge
-                            variant="secondary"
-                            className={`shrink-0 text-xs ${
-                              member.politicalLean === "far-left"
-                                ? "bg-[var(--far-left)]/20 text-[var(--far-left)]"
-                                : member.politicalLean === "left"
-                                  ? "bg-[var(--left-bias)]/20 text-[var(--left-bias)]"
-                                  : member.politicalLean === "center"
-                                    ? "bg-[var(--center-bias)]/20 text-[var(--center-bias)]"
-                                    : member.politicalLean === "right"
-                                      ? "bg-[var(--right-bias)]/20 text-[var(--right-bias)]"
-                                      : member.politicalLean === "far-right"
-                                        ? "bg-[var(--far-right)]/20 text-[var(--far-right)]"
-                                        : ""
-                            }`}
-                          >
-                            {member.politicalLean === "unknown"
-                              ? "Unknown"
-                              : member.politicalLean
-                                  .split("-")
-                                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                                  .join(" ")}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            <Separator />
-
-            {/* Funding Sources */}
-            {outlet.funding && Array.isArray(outlet.funding) && outlet.funding.length > 0 && (
+        {/* Main Content Grid - rest of the page */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Ownership & Funding */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                Ownership & Funding
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div>
-                <h3 className="mb-2 text-sm font-medium text-muted-foreground">Funding Sources</h3>
-                <div className="flex flex-wrap gap-2">
-                  {outlet.funding.map((source, index) => (
-                    <Badge key={index} variant="outline">
-                      <DollarSign className="mr-1 h-3 w-3" />
+                <h4 className="font-medium text-foreground">Ownership</h4>
+                <p className="text-sm text-muted-foreground">{ownershipData.type}</p>
+                <p className="mt-1 text-sm">{ownershipData.details}</p>
+              </div>
+              <Separator />
+              <div>
+                <h4 className="font-medium text-foreground">Funding Sources</h4>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {fundingData.sources?.map((source, i) => (
+                    <Badge key={i} variant="secondary">
                       {source}
                     </Badge>
                   ))}
                 </div>
               </div>
-            )}
-
-            {/* Major Financial Sponsors & Supporters */}
-            {outlet.sponsors && outlet.sponsors.length > 0 && (
-              <>
-                <Separator />
-                <div>
-                  <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                    Major Financial Sponsors & Supporters
-                  </h3>
-                  <div className="space-y-2">
-                    {outlet.sponsors.map((sponsor, index) => (
-                      <div
-                        key={index}
-                        className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 p-3"
-                      >
-                        <DollarSign className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                        <div className="flex-1">
-                          <div className="mb-1 flex items-center gap-2">
-                            <span className="font-semibold text-foreground">{sponsor.name}</span>
-                            <Badge variant="secondary" className="text-xs capitalize">
-                              {sponsor.type.replace("-", " ")}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground">{sponsor.relationship}</p>
-                          {sponsor.amount && (
-                            <p className="mt-1 text-xs font-medium text-accent">Amount: {sponsor.amount}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+              {outlet.sponsors && outlet.sponsors.length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <h4 className="font-medium text-foreground">Key Sponsors</h4>
+                    <ul className="mt-2 space-y-1">
+                      {outlet.sponsors.slice(0, 5).map((sponsor, i) => (
+                        <li key={i} className="text-sm">
+                          <span className="font-medium">{sponsor.name}</span>
+                          <span className="text-muted-foreground"> - {sponsor.type}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Stakeholders & Board */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Key Stakeholders
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {outlet.stakeholders && outlet.stakeholders.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-foreground">Major Stakeholders</h4>
+                  <ul className="mt-2 space-y-2">
+                    {outlet.stakeholders.map((stakeholder, i) => (
+                      <li key={i} className="text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{stakeholder.name}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {stakeholder.stake}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{stakeholder.description}</p>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              </>
-            )}
-          </div>
-        </Card>
-
-        {/* Accountability Metrics - Added timestamp */}
-        {(outlet.retractions.length > 0 || outlet.lawsuits.length > 0 || outlet.scandals.length > 0) && (
-          <Card className="mb-8 p-6">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-5 w-5 text-destructive" />
-                <h2 className="text-xl font-bold text-foreground">Accountability Metrics</h2>
-              </div>
-              <LastUpdated date={outlet.lastUpdated} />
-            </div>
-
-            <div className="space-y-6">
-              {/* Retractions */}
-              {outlet.retractions.length > 0 && (
-                <div>
-                  <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <FileText className="h-4 w-4" />
-                    Retractions ({outlet.retractions.length})
-                  </h3>
-                  <div className="space-y-3">
-                    {outlet.retractions.map((retraction, index) => (
-                      <div key={index} className="rounded-lg border border-border bg-muted/50 p-4">
-                        <div className="mb-1 flex items-center gap-2">
-                          <Clock className="h-3 w-3 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(retraction.date).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <h4 className="mb-1 font-semibold text-foreground">{retraction.title}</h4>
-                        <p className="text-sm text-muted-foreground">{retraction.description}</p>
-                      </div>
-                    ))}
+              )}
+              {outlet.boardMembers && outlet.boardMembers.length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <h4 className="font-medium text-foreground">Board Members</h4>
+                    <ul className="mt-2 space-y-2">
+                      {outlet.boardMembers.slice(0, 5).map((member, i) => (
+                        <li key={i} className="text-sm">
+                          <span className="font-medium">{member.name}</span>
+                          <span className="text-muted-foreground"> - {member.position}</span>
+                          <p className="text-xs text-muted-foreground">{member.background}</p>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Accountability & Retractions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Flag className="h-5 w-5" />
+                Accountability Record
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {outlet.retractions && outlet.retractions.length > 0 ? (
+                <div>
+                  <h4 className="font-medium text-foreground">Recent Retractions</h4>
+                  <ul className="mt-2 space-y-2">
+                    {outlet.retractions.slice(0, 3).map((retraction, i) => (
+                      <li key={i} className="rounded-lg border p-2 text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Clock className="h-3 w-3" />
+                          {retraction.date}
+                        </div>
+                        <p className="mt-1">{retraction.description}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="h-4 w-4" />
+                  <span className="text-sm">No major retractions on record</span>
                 </div>
               )}
 
-              {/* Lawsuits */}
-              {outlet.lawsuits.length > 0 && (
+              {outlet.accountability && (
+                <>
+                  <Separator />
+                  <div>
+                    <h4 className="font-medium text-foreground">Correction Policy</h4>
+                    <p className="mt-1 text-sm text-muted-foreground">{outlet.accountability.corrections}</p>
+                    {outlet.accountability.details && <p className="mt-1 text-sm">{outlet.accountability.details}</p>}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Legal Issues & Scandals */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Scale className="h-5 w-5" />
+                Legal History & Scandals
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {outlet.lawsuits && outlet.lawsuits.length > 0 ? (
                 <div>
-                  <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <Scale className="h-4 w-4" />
-                    Legal Cases ({outlet.lawsuits.length})
-                  </h3>
-                  <div className="space-y-3">
-                    {outlet.lawsuits.map((lawsuit, index) => (
-                      <div key={index} className="rounded-lg border border-border bg-muted/50 p-4">
-                        <div className="mb-2 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Clock className="h-3 w-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(lawsuit.date).toLocaleDateString()}
-                            </span>
-                          </div>
+                  <h4 className="font-medium text-foreground">Lawsuits</h4>
+                  <ul className="mt-2 space-y-2">
+                    {outlet.lawsuits.map((lawsuit, i) => (
+                      <li key={i} className="rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{lawsuit.case || lawsuit.type}</span>
                           <Badge
-                            variant={
-                              lawsuit.status === "active"
-                                ? "destructive"
-                                : lawsuit.status === "settled"
-                                  ? "secondary"
-                                  : "outline"
-                            }
+                            variant={lawsuit.status === "dismissed" ? "secondary" : "destructive"}
+                            className="text-xs"
                           >
-                            {lawsuit.status === "active" && <XCircle className="mr-1 h-3 w-3" />}
-                            {lawsuit.status === "settled" && <DollarSign className="mr-1 h-3 w-3" />}
-                            {lawsuit.status === "dismissed" && <CheckCircle className="mr-1 h-3 w-3" />}
                             {lawsuit.status}
                           </Badge>
                         </div>
-                        <div className="mb-1 flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">
-                            {lawsuit.type}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{lawsuit.description}</p>
-                        {lawsuit.amount && (
-                          <p className="mt-2 text-sm font-semibold text-destructive">
-                            Settlement: ${lawsuit.amount.toLocaleString()}
-                          </p>
-                        )}
-                      </div>
+                        <p className="mt-1 text-muted-foreground">{lawsuit.description}</p>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="h-4 w-4" />
+                  <span className="text-sm">No major lawsuits on record</span>
                 </div>
               )}
 
-              {/* Scandals */}
-              {outlet.scandals.length > 0 && (
-                <div>
-                  <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <Flag className="h-4 w-4" />
-                    Controversies & Scandals ({outlet.scandals.length})
-                  </h3>
-                  <div className="space-y-3">
-                    {outlet.scandals.map((scandal, index) => (
-                      <div key={index} className="rounded-lg border border-border bg-muted/50 p-4">
-                        <div className="mb-2 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Clock className="h-3 w-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(scandal.date).toLocaleDateString()}
-                            </span>
+              {outlet.scandals && outlet.scandals.length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <h4 className="font-medium text-foreground">Scandals</h4>
+                    <ul className="mt-2 space-y-2">
+                      {outlet.scandals.map((scandal, i) => (
+                        <li key={i} className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-2 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{scandal.title}</span>
+                            <Badge variant="outline" className="text-xs capitalize">
+                              {scandal.severity}
+                            </Badge>
                           </div>
-                          <Badge
-                            variant={
-                              scandal.severity === "major"
-                                ? "destructive"
-                                : scandal.severity === "moderate"
-                                  ? "secondary"
-                                  : "outline"
-                            }
-                          >
-                            {scandal.severity}
-                          </Badge>
-                        </div>
-                        <h4 className="mb-1 font-semibold text-foreground">{scandal.title}</h4>
-                        <p className="text-sm text-muted-foreground">{scandal.description}</p>
-                      </div>
-                    ))}
+                          <p className="mt-1 text-muted-foreground">{scandal.description}</p>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Audience Metrics */}
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Audience & Reach
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-lg border p-4 text-center">
+                <div className="text-sm text-muted-foreground">Avg. Monthly Audience</div>
+                <div className="mt-1 text-xl font-bold text-foreground">
+                  {outlet.metrics?.avgMonthlyAudience ?? "N/A"}
+                </div>
+              </div>
+              {outlet.metrics?.digitalSubscribers && (
+                <div className="rounded-lg border p-4 text-center">
+                  <div className="text-sm text-muted-foreground">Digital Subscribers</div>
+                  <div className="mt-1 text-xl font-bold text-foreground">{outlet.metrics.digitalSubscribers}</div>
+                </div>
+              )}
+              {outlet.metrics?.totalFollowers && (
+                <div className="rounded-lg border p-4 text-center">
+                  <div className="text-sm text-muted-foreground">Total Followers</div>
+                  <div className="mt-1 text-xl font-bold text-foreground">{outlet.metrics.totalFollowers}</div>
+                </div>
+              )}
+              {outlet.metrics?.engagementRate && (
+                <div className="rounded-lg border p-4 text-center">
+                  <div className="text-sm text-muted-foreground">Engagement Rate</div>
+                  <div className="mt-1 text-xl font-bold text-foreground">{outlet.metrics.engagementRate}</div>
                 </div>
               )}
             </div>
-          </Card>
-        )}
-
-        {/* Disclaimer */}
-        <Card className="border-accent/50 bg-accent/5 p-6">
-          <h3 className="mb-2 font-semibold text-foreground">Methodology Note</h3>
-          <p className="text-sm text-muted-foreground">
-            Our scores are derived from multiple independent fact-checking organizations, media watchdog groups, and
-            transparency reports. Bias scores reflect editorial positioning based on content analysis. For more
-            information about our methodology,{" "}
-            <Link href="/methodology" className="font-medium text-accent hover:underline">
-              click here
-            </Link>
-            .
-          </p>
+          </CardContent>
         </Card>
+
+        {/* Footer Actions */}
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border bg-muted/50 p-4">
+          <div className="text-sm text-muted-foreground">
+            <Clock className="mr-1 inline-block h-4 w-4" />
+            Last updated: {formatDate(outlet.lastUpdated)}
+          </div>
+          <div className="flex gap-2">
+            {outlet.website && (
+              <Button variant="outline" asChild>
+                <a href={outlet.website} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Visit Website
+                </a>
+              </Button>
+            )}
+            <Button variant="outline" asChild>
+              <Link href={`/compare?outlet1=${outlet.id}`}>
+                <Scale className="mr-2 h-4 w-4" />
+                Compare
+              </Link>
+            </Button>
+          </div>
+        </div>
       </div>
     </main>
   )

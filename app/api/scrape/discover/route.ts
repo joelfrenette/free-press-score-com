@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { discoverNewOutlets } from "@/lib/data-scraping"
-import { loadOutlets, saveOutlets } from "@/lib/mock-data"
+import { loadOutlets, saveOutlets } from "@/lib/media-outlet-data"
 
 export async function POST(request: NextRequest) {
   try {

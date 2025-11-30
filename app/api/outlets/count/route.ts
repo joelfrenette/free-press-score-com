@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getOutletCount, mediaOutlets, loadOutlets } from "@/lib/mock-data"
+import { getOutletCount, mediaOutlets, loadOutlets } from "@/lib/media-outlet-data"
 
 // Disable caching for this route
 export const dynamic = "force-dynamic"

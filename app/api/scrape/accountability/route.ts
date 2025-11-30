@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server"
 import { callAIWithCascade, parseJSONFromResponse } from "@/lib/data-scraping"
-import { mediaOutlets, updateOutlet, getOutlets } from "@/lib/mock-data"
+import { mediaOutlets, updateOutlet, getOutlets } from "@/lib/media-outlet-data"
 
 export async function POST(request: NextRequest) {
   try {

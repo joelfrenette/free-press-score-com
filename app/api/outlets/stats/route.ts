@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { mediaOutlets, getOutletCount, loadOutlets } from "@/lib/mock-data"
+import { mediaOutlets, getOutletCount, loadOutlets } from "@/lib/media-outlet-data"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0

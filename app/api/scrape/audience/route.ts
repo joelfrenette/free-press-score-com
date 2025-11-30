@@ -1,4 +1,4 @@
-import { getOutlets, updateOutlet } from "@/lib/mock-data"
+import { getOutlets, updateOutlet } from "@/lib/media-outlet-data"
 import { callAIWithCascade, parseJSONFromResponse } from "@/lib/data-scraping"
 
 export const maxDuration = 60

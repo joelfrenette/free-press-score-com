@@ -1,4 +1,4 @@
-import { mediaOutlets } from "@/lib/mock-data"
+import { mediaOutlets } from "@/lib/media-outlet-data"
 import { checkScrapingBeeApiKey } from "@/lib/admin-actions"
 import { AdminDashboardClient } from "@/components/admin-dashboard-client"
 

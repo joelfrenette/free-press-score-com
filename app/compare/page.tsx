@@ -1,51 +1,51 @@
-'use client';
+"use client"
 
-import { useState, useMemo } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
-import { mediaOutlets } from '@/lib/mock-data';
-import { ArrowRight, TrendingUp, CheckCircle, Eye, FileText, Scale, Building2 } from 'lucide-react';
+import { useState, useMemo } from "react"
+import Link from "next/link"
+import Image from "next/image"
+import { Card } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
+import { Progress } from "@/components/ui/progress"
+import { mediaOutlets } from "@/lib/media-outlet-data"
+import { ArrowRight, TrendingUp, CheckCircle, Eye, FileText, Scale, Building2 } from "lucide-react"
 
 function getBiasLabel(score: number): string {
-  if (score <= -6) return 'Far Left';
-  if (score <= -3) return 'Left';
-  if (score <= 3) return 'Center';
-  if (score <= 6) return 'Right';
-  return 'Far Right';
+  if (score <= -6) return "Far Left"
+  if (score <= -3) return "Left"
+  if (score <= 3) return "Center"
+  if (score <= 6) return "Right"
+  return "Far Right"
 }
 
 function getBiasColor(score: number): string {
-  if (score <= -6) return 'text-blue-700 bg-blue-100 dark:bg-blue-900/30';
-  if (score <= -3) return 'text-blue-600 bg-blue-50 dark:bg-blue-900/20';
-  if (score <= 3) return 'text-neutral-700 bg-neutral-100 dark:bg-neutral-800';
-  if (score <= 6) return 'text-rose-600 bg-rose-50 dark:bg-rose-900/20';
-  return 'text-rose-700 bg-rose-100 dark:bg-rose-900/30';
+  if (score <= -6) return "text-blue-700 bg-blue-100 dark:bg-blue-900/30"
+  if (score <= -3) return "text-blue-600 bg-blue-50 dark:bg-blue-900/20"
+  if (score <= 3) return "text-neutral-700 bg-neutral-100 dark:bg-neutral-800"
+  if (score <= 6) return "text-rose-600 bg-rose-50 dark:bg-rose-900/20"
+  return "text-rose-700 bg-rose-100 dark:bg-rose-900/30"
 }
 
 function getScoreColor(score: number): string {
-  if (score >= 80) return 'text-green-600';
-  if (score >= 60) return 'text-amber-600';
-  return 'text-red-600';
+  if (score >= 80) return "text-green-600"
+  if (score >= 60) return "text-amber-600"
+  return "text-red-600"
 }
 
 export default function ComparePage() {
-  const [outlet1Id, setOutlet1Id] = useState<string>('');
-  const [outlet2Id, setOutlet2Id] = useState<string>('');
-  const [outlet3Id, setOutlet3Id] = useState<string>('');
+  const [outlet1Id, setOutlet1Id] = useState<string>("")
+  const [outlet2Id, setOutlet2Id] = useState<string>("")
+  const [outlet3Id, setOutlet3Id] = useState<string>("")
 
   const selectedOutlets = useMemo(() => {
-    const outlets = [];
-    if (outlet1Id) outlets.push(mediaOutlets.find(o => o.id === outlet1Id));
-    if (outlet2Id) outlets.push(mediaOutlets.find(o => o.id === outlet2Id));
-    if (outlet3Id && outlet3Id !== 'none') outlets.push(mediaOutlets.find(o => o.id === outlet3Id));
-    return outlets.filter(Boolean);
-  }, [outlet1Id, outlet2Id, outlet3Id]);
+    const outlets = []
+    if (outlet1Id) outlets.push(mediaOutlets.find((o) => o.id === outlet1Id))
+    if (outlet2Id) outlets.push(mediaOutlets.find((o) => o.id === outlet2Id))
+    if (outlet3Id && outlet3Id !== "none") outlets.push(mediaOutlets.find((o) => o.id === outlet3Id))
+    return outlets.filter(Boolean)
+  }, [outlet1Id, outlet2Id, outlet3Id])
 
   return (
     <main className="min-h-screen bg-background">
@@ -53,7 +53,8 @@ export default function ComparePage() {
         <div className="mb-8">
           <h1 className="mb-4 text-3xl font-bold text-foreground">Compare Media Outlets</h1>
           <p className="text-muted-foreground">
-            Select up to 3 media outlets to compare their bias scores, accountability metrics, and press freedom ratings side by side.
+            Select up to 3 media outlets to compare their bias scores, accountability metrics, and press freedom ratings
+            side by side.
           </p>
         </div>
 
@@ -70,7 +71,7 @@ export default function ComparePage() {
                   <SelectValue placeholder="Select first outlet" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mediaOutlets.map(outlet => (
+                  {mediaOutlets.map((outlet) => (
                     <SelectItem key={outlet.id} value={outlet.id}>
                       {outlet.name} ({outlet.country})
                     </SelectItem>
@@ -88,7 +89,7 @@ export default function ComparePage() {
                   <SelectValue placeholder="Select second outlet" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mediaOutlets.map(outlet => (
+                  {mediaOutlets.map((outlet) => (
                     <SelectItem key={outlet.id} value={outlet.id}>
                       {outlet.name} ({outlet.country})
                     </SelectItem>
@@ -107,7 +108,7 @@ export default function ComparePage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
-                  {mediaOutlets.map(outlet => (
+                  {mediaOutlets.map((outlet) => (
                     <SelectItem key={outlet.id} value={outlet.id}>
                       {outlet.name} ({outlet.country})
                     </SelectItem>
@@ -124,11 +125,11 @@ export default function ComparePage() {
             {/* Headers */}
             <div className="grid gap-4" style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}>
               <div />
-              {selectedOutlets.map(outlet => (
+              {selectedOutlets.map((outlet) => (
                 <Card key={outlet!.id} className="p-4">
                   <div className="mb-3 flex h-16 items-center justify-center overflow-hidden rounded bg-white">
                     <Image
-                      src={outlet!.logo || '/placeholder.svg'}
+                      src={outlet!.logo || "/placeholder.svg"}
                       alt={`${outlet!.name} logo`}
                       width={100}
                       height={50}
@@ -138,7 +139,7 @@ export default function ComparePage() {
                   <h3 className="mb-1 text-center font-semibold text-foreground">{outlet!.name}</h3>
                   <p className="mb-2 text-center text-xs text-muted-foreground">{outlet!.country}</p>
                   <Link href={`/outlet/${outlet!.id}`}>
-                    <Button variant="outline" size="sm" className="w-full gap-2">
+                    <Button variant="outline" size="sm" className="w-full gap-2 bg-transparent">
                       View Details
                       <ArrowRight className="h-3 w-3" />
                     </Button>
@@ -153,9 +154,12 @@ export default function ComparePage() {
                 <TrendingUp className="h-5 w-5 text-muted-foreground" />
                 <h3 className="font-semibold text-foreground">Free Press Score</h3>
               </div>
-              <div className="grid gap-4" style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}>
+              <div
+                className="grid gap-4"
+                style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}
+              >
                 <div className="flex items-center text-sm text-muted-foreground">Overall Rating</div>
-                {selectedOutlets.map(outlet => (
+                {selectedOutlets.map((outlet) => (
                   <div key={outlet!.id} className="text-center">
                     <div className={`text-4xl font-bold ${getScoreColor(outlet!.freePressScore)}`}>
                       {outlet!.freePressScore}
@@ -169,14 +173,17 @@ export default function ComparePage() {
             {/* Score Breakdown */}
             <Card className="p-6">
               <h3 className="mb-4 font-semibold text-foreground">Score Breakdown</h3>
-              
+
               {/* Fact-Check Accuracy */}
-              <div className="mb-6 grid gap-4" style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}>
+              <div
+                className="mb-6 grid gap-4"
+                style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}
+              >
                 <div className="flex items-center gap-2">
                   <CheckCircle className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-foreground">Fact-Check Accuracy</span>
                 </div>
-                {selectedOutlets.map(outlet => (
+                {selectedOutlets.map((outlet) => (
                   <div key={outlet!.id}>
                     <div className="mb-2 flex items-center justify-center gap-2">
                       <span className={`text-2xl font-bold ${getScoreColor(outlet!.factCheckAccuracy)}`}>
@@ -190,12 +197,15 @@ export default function ComparePage() {
               </div>
 
               {/* Editorial Independence */}
-              <div className="mb-6 grid gap-4" style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}>
+              <div
+                className="mb-6 grid gap-4"
+                style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}
+              >
                 <div className="flex items-center gap-2">
                   <Eye className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-foreground">Editorial Independence</span>
                 </div>
-                {selectedOutlets.map(outlet => (
+                {selectedOutlets.map((outlet) => (
                   <div key={outlet!.id}>
                     <div className="mb-2 flex items-center justify-center gap-2">
                       <span className={`text-2xl font-bold ${getScoreColor(outlet!.editorialIndependence)}`}>
@@ -209,12 +219,15 @@ export default function ComparePage() {
               </div>
 
               {/* Transparency */}
-              <div className="grid gap-4" style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}>
+              <div
+                className="grid gap-4"
+                style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}
+              >
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-foreground">Transparency</span>
                 </div>
-                {selectedOutlets.map(outlet => (
+                {selectedOutlets.map((outlet) => (
                   <div key={outlet!.id}>
                     <div className="mb-2 flex items-center justify-center gap-2">
                       <span className={`text-2xl font-bold ${getScoreColor(outlet!.transparency)}`}>
@@ -234,28 +247,32 @@ export default function ComparePage() {
                 <Scale className="h-5 w-5 text-muted-foreground" />
                 <h3 className="font-semibold text-foreground">Bias Analysis</h3>
               </div>
-              <div className="grid gap-4" style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}>
+              <div
+                className="grid gap-4"
+                style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}
+              >
                 <div className="flex items-center text-sm text-muted-foreground">Political Lean</div>
-                {selectedOutlets.map(outlet => (
+                {selectedOutlets.map((outlet) => (
                   <div key={outlet!.id} className="text-center">
                     <Badge variant="secondary" className={`mb-2 ${getBiasColor(outlet!.biasScore)}`}>
                       {getBiasLabel(outlet!.biasScore)}
                     </Badge>
                     <div className="text-sm text-muted-foreground">
-                      {outlet!.biasScore > 0 ? '+' : ''}{outlet!.biasScore.toFixed(1)}
+                      {outlet!.biasScore > 0 ? "+" : ""}
+                      {outlet!.biasScore.toFixed(1)}
                     </div>
                   </div>
                 ))}
 
                 <div className="flex items-center text-sm text-muted-foreground">Perspectives</div>
-                {selectedOutlets.map(outlet => (
+                {selectedOutlets.map((outlet) => (
                   <div key={outlet!.id} className="text-center">
-                    <Badge variant={outlet!.perspectives === 'multiple' ? 'default' : 'secondary'}>
-                      {outlet!.perspectives === 'multiple'
-                        ? 'Multiple'
-                        : outlet!.perspectives === 'limited'
-                        ? 'Limited'
-                        : 'Single'}
+                    <Badge variant={outlet!.perspectives === "multiple" ? "default" : "secondary"}>
+                      {outlet!.perspectives === "multiple"
+                        ? "Multiple"
+                        : outlet!.perspectives === "limited"
+                          ? "Limited"
+                          : "Single"}
                     </Badge>
                   </div>
                 ))}
@@ -268,16 +285,19 @@ export default function ComparePage() {
                 <Building2 className="h-5 w-5 text-muted-foreground" />
                 <h3 className="font-semibold text-foreground">Ownership & Funding</h3>
               </div>
-              <div className="grid gap-4" style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}>
+              <div
+                className="grid gap-4"
+                style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}
+              >
                 <div className="flex items-center text-sm text-muted-foreground">Ownership</div>
-                {selectedOutlets.map(outlet => (
+                {selectedOutlets.map((outlet) => (
                   <div key={outlet!.id} className="text-sm text-foreground">
                     {outlet!.ownership}
                   </div>
                 ))}
 
                 <div className="flex items-center text-sm text-muted-foreground">Funding Sources</div>
-                {selectedOutlets.map(outlet => (
+                {selectedOutlets.map((outlet) => (
                   <div key={outlet!.id} className="flex flex-wrap gap-1">
                     {outlet!.funding.map((source, idx) => (
                       <Badge key={idx} variant="outline" className="text-xs">
@@ -292,23 +312,26 @@ export default function ComparePage() {
             {/* Accountability */}
             <Card className="p-6">
               <h3 className="mb-4 font-semibold text-foreground">Accountability Metrics</h3>
-              <div className="grid gap-4" style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}>
+              <div
+                className="grid gap-4"
+                style={{ gridTemplateColumns: `200px repeat(${selectedOutlets.length}, 1fr)` }}
+              >
                 <div className="flex items-center text-sm text-muted-foreground">Retractions</div>
-                {selectedOutlets.map(outlet => (
+                {selectedOutlets.map((outlet) => (
                   <div key={outlet!.id} className="text-center">
                     <div className="text-2xl font-bold text-foreground">{outlet!.retractions?.length || 0}</div>
                   </div>
                 ))}
 
                 <div className="flex items-center text-sm text-muted-foreground">Legal Cases</div>
-                {selectedOutlets.map(outlet => (
+                {selectedOutlets.map((outlet) => (
                   <div key={outlet!.id} className="text-center">
                     <div className="text-2xl font-bold text-foreground">{outlet!.lawsuits?.length || 0}</div>
                   </div>
                 ))}
 
                 <div className="flex items-center text-sm text-muted-foreground">Scandals</div>
-                {selectedOutlets.map(outlet => (
+                {selectedOutlets.map((outlet) => (
                   <div key={outlet!.id} className="text-center">
                     <div className="text-2xl font-bold text-foreground">{outlet!.scandals?.length || 0}</div>
                   </div>
@@ -322,12 +345,10 @@ export default function ComparePage() {
           <Card className="p-12 text-center">
             <Scale className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
             <h3 className="mb-2 text-lg font-semibold text-foreground">No Outlets Selected</h3>
-            <p className="text-muted-foreground">
-              Select at least one outlet above to start comparing
-            </p>
+            <p className="text-muted-foreground">Select at least one outlet above to start comparing</p>
           </Card>
         )}
       </div>
     </main>
-  );
+  )
 }

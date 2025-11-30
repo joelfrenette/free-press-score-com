@@ -1,46 +1,42 @@
-'use client'
+"use client"
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { MediaOutlet } from '@/lib/mock-data';
-import { ArrowLeft, Save } from 'lucide-react';
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import type { MediaOutlet } from "@/lib/media-outlet-data"
+import { ArrowLeft, Save } from "lucide-react"
 
 interface OutletEditFormProps {
-  outlet: MediaOutlet;
+  outlet: MediaOutlet
 }
 
 export function OutletEditForm({ outlet }: OutletEditFormProps) {
-  const router = useRouter();
-  const [formData, setFormData] = useState(outlet);
-  const [saving, setSaving] = useState(false);
+  const router = useRouter()
+  const [formData, setFormData] = useState(outlet)
+  const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
-    setSaving(true);
+    setSaving(true)
     // TODO: Implement save to database
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setSaving(false);
-    router.push(`/outlet/${outlet.id}`);
-  };
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    setSaving(false)
+    router.push(`/outlet/${outlet.id}`)
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          onClick={() => router.back()}
-          className="gap-2"
-        >
+        <Button variant="ghost" onClick={() => router.back()} className="gap-2">
           <ArrowLeft className="h-4 w-4" />
           Back
         </Button>
         <Button onClick={handleSave} disabled={saving} className="gap-2">
           <Save className="h-4 w-4" />
-          {saving ? 'Saving...' : 'Save Changes'}
+          {saving ? "Saving..." : "Save Changes"}
         </Button>
       </div>
 
@@ -77,7 +73,7 @@ export function OutletEditForm({ outlet }: OutletEditFormProps) {
             <Label htmlFor="website">Website</Label>
             <Input
               id="website"
-              value={formData.website || ''}
+              value={formData.website || ""}
               onChange={(e) => setFormData({ ...formData, website: e.target.value })}
             />
           </div>
@@ -162,8 +158,8 @@ export function OutletEditForm({ outlet }: OutletEditFormProps) {
           <Label htmlFor="funding">Funding (comma-separated)</Label>
           <Input
             id="funding"
-            value={formData.funding.join(', ')}
-            onChange={(e) => setFormData({ ...formData, funding: e.target.value.split(',').map(s => s.trim()) })}
+            value={formData.funding.join(", ")}
+            onChange={(e) => setFormData({ ...formData, funding: e.target.value.split(",").map((s) => s.trim()) })}
           />
         </div>
       </Card>
@@ -172,9 +168,9 @@ export function OutletEditForm({ outlet }: OutletEditFormProps) {
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={saving} size="lg" className="gap-2">
           <Save className="h-4 w-4" />
-          {saving ? 'Saving...' : 'Save Changes'}
+          {saving ? "Saving..." : "Save Changes"}
         </Button>
       </div>
     </div>
-  );
+  )
 }
