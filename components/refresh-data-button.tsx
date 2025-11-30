@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress"
 import { RefreshCw, CheckCircle, XCircle, Loader2, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { mutate } from "swr"
 
 interface RefreshDataButtonProps {
   outletId: string
@@ -33,7 +34,6 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
     { name: "funding", label: "Funding", status: "pending" },
     { name: "legal", label: "Legal Cases", status: "pending" },
     { name: "audience", label: "Audience Data", status: "pending" },
-    { name: "general", label: "General Data", status: "pending" },
     { name: "scores", label: "Recalculating Scores", status: "pending" },
   ])
   const [isComplete, setIsComplete] = useState(false)
@@ -53,7 +53,6 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
       { name: "funding", label: "Funding", status: "pending" },
       { name: "legal", label: "Legal Cases", status: "pending" },
       { name: "audience", label: "Audience Data", status: "pending" },
-      { name: "general", label: "General Data", status: "pending" },
       { name: "scores", label: "Recalculating Scores", status: "pending" },
     ])
   }
@@ -129,7 +128,9 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
               title: "Data refreshed",
               description: "Data has been updated.",
             })
-            setTimeout(() => {
+            setTimeout(async () => {
+              // Force SWR to refetch fresh data from the API
+              await mutate("/api/outlets")
               setShowDialog(false)
               router.refresh()
             }, 1500)
@@ -174,7 +175,9 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
                   description: `Successfully updated ${data.updates?.length || 0} data categories`,
                 })
 
-                setTimeout(() => {
+                setTimeout(async () => {
+                  // Force SWR to refetch fresh data from the API
+                  await mutate("/api/outlets")
                   setShowDialog(false)
                   router.refresh()
                 }, 1500)

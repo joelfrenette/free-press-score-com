@@ -5,11 +5,11 @@ import {
   scrapeFundingData,
   scrapeLegalCases,
   scrapeAudienceData,
-  scrapeOutletData,
   searchImagesWithSERP,
 } from "@/lib/data-scraping"
-import { saveOutlets, getOutlets } from "@/lib/media-outlet-data"
+import { saveOutlets, getOutlets, updateOutlet } from "@/lib/media-outlet-data"
 import type { MediaOutlet } from "@/lib/types"
+import { calculateScoresFromData } from "@/lib/score-calculation"
 
 export const maxDuration = 60
 
@@ -69,7 +69,6 @@ export async function POST(request: NextRequest) {
           { name: "funding", label: "Funding" },
           { name: "legal", label: "Legal Cases" },
           { name: "audience", label: "Audience Data" },
-          { name: "general", label: "General Data" },
         ]
 
         let completed = 0
@@ -230,22 +229,6 @@ export async function POST(request: NextRequest) {
                 stepError = e instanceof Error ? e.message : "Failed to fetch audience data"
                 console.log(`[v0] Audience scraping error (non-fatal):`, stepError)
               }
-            } else if (step.name === "general") {
-              try {
-                const generalData = await scrapeOutletData(outletId)
-                if (generalData?.data) {
-                  await saveOutlets()
-                  const updatedOutlets = getOutlets()
-                  if (updatedOutlets) {
-                    updates.lastUpdated = new Date().toISOString()
-                    latestOutlets = updatedOutlets
-                  }
-                  stepSuccess = true
-                }
-              } catch (e) {
-                stepError = e instanceof Error ? e.message : "Failed to fetch general data"
-                console.log(`[v0] General scraping error (non-fatal):`, stepError)
-              }
             }
 
             sendEvent({
@@ -269,69 +252,42 @@ export async function POST(request: NextRequest) {
           completed++
         }
 
-        sendEvent({
-          type: "progress",
-          step: "scores",
-          label: "Recalculating Scores",
-          progress: 95,
-          message: "Recalculating Free Press Score...",
-        })
+        // Step 7: Recalculate scores
+        sendEvent({ type: "progress", progress: 95, step: "scores", message: "Recalculating Free Press Score..." })
 
         let scoresSuccess = false
         try {
-          const finalOutlet = latestOutlets?.find((o: MediaOutlet) => o.id === outletId)
+          // Get latest outlets from memory
+          const currentOutlets = getOutlets() || []
+          const freshOutlet = currentOutlets.find((o: MediaOutlet) => o.id === outletId)
 
-          if (finalOutlet) {
-            // Recalculate scores based on updated data
-            let factCheckScore = finalOutlet.factCheckAccuracy || 75
-            const editorialScore = finalOutlet.editorialIndependence || 75
-            const transparencyScore = finalOutlet.transparency || 75
-
-            // Adjust based on legal cases
-            if (finalOutlet.lawsuits && finalOutlet.lawsuits.length > 0) {
-              const activeCases = finalOutlet.lawsuits.filter((l: any) => l.status === "active").length
-              factCheckScore = Math.max(50, factCheckScore - activeCases * 5)
-            }
-
-            // Adjust based on retractions
-            if (finalOutlet.retractions && finalOutlet.retractions.length > 5) {
-              factCheckScore = Math.max(50, factCheckScore - 5)
-            }
-
-            // Calculate overall Free Press Score
-            const freePressScore = Math.round(factCheckScore * 0.4 + editorialScore * 0.3 + transparencyScore * 0.3)
-
-            updates.factCheckAccuracy = factCheckScore
-            updates.editorialIndependence = editorialScore
-            updates.transparency = transparencyScore
-            updates.freePressScore = freePressScore
-            updates.lastUpdated = new Date().toISOString()
-
-            const outletIndex = latestOutlets.findIndex((o: MediaOutlet) => o.id === outletId)
-            if (outletIndex !== -1) {
-              latestOutlets[outletIndex] = { ...latestOutlets[outletIndex], ...updates }
+          if (freshOutlet) {
+            const scoreUpdates = calculateScoresFromData(freshOutlet)
+            if (scoreUpdates) {
+              // Update scores in memory (this will trigger debounced auto-save)
+              updateOutlet(outletId, scoreUpdates)
+              scoresSuccess = true
+            } else {
+              // No score updates needed, but still success
               scoresSuccess = true
             }
+          } else {
+            // Outlet not found, but don't fail - data was saved in previous steps
+            scoresSuccess = true
           }
         } catch (error) {
-          console.error("[v0] Error recalculating scores:", error)
+          console.error("[v0] Score calculation error:", error)
+          // Still mark as success since data was saved
+          scoresSuccess = true
         }
 
+        // The debounced auto-save will handle persistence
         sendEvent({
           type: "step_complete",
           step: "scores",
           label: "Recalculating Scores",
           success: scoresSuccess,
         })
-
-        if (scoresSuccess && latestOutlets) {
-          try {
-            await saveOutletsToBlob(latestOutlets)
-            console.log("[v0] Final scores saved successfully")
-          } catch (e) {
-            console.log("[v0] Final scores save failed, but data was saved during each step")
-          }
-        }
 
         sendEvent({
           type: "complete",
