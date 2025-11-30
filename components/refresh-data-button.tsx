@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { RefreshCw, CheckCircle, XCircle, Loader2, X } from "lucide-react"
@@ -37,6 +38,7 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
   ])
   const [isComplete, setIsComplete] = useState(false)
   const { toast } = useToast()
+  const router = useRouter()
 
   const abortControllerRef = useRef<AbortController | null>(null)
 
@@ -64,7 +66,6 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
     setIsLoading(false)
     setShowDialog(false)
 
-    // Show toast if cancelled during loading
     if (isLoading && !isComplete && !errorMessage) {
       toast({
         title: "Refresh cancelled",
@@ -88,7 +89,7 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ outletId }),
-        signal, // Add abort signal
+        signal,
       })
 
       console.log("[v0] Response status:", response.status)
@@ -126,11 +127,12 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
             )
             toast({
               title: "Data refreshed",
-              description: "Data has been updated. Reloading page...",
+              description: "Data has been updated.",
             })
             setTimeout(() => {
-              window.location.reload()
-            }, 2000)
+              setShowDialog(false)
+              router.refresh()
+            }, 1500)
           }
           break
         }
@@ -165,7 +167,6 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
                 setIsComplete(true)
                 setCurrentStep("Complete!")
 
-                // Mark scores step as complete
                 setSteps((prev) => prev.map((s) => (s.name === "scores" ? { ...s, status: "success" } : s)))
 
                 toast({
@@ -173,10 +174,10 @@ export function RefreshDataButton({ outletId }: RefreshDataButtonProps) {
                   description: `Successfully updated ${data.updates?.length || 0} data categories`,
                 })
 
-                // Reload page after 2 seconds to show updated data
                 setTimeout(() => {
-                  window.location.reload()
-                }, 2000)
+                  setShowDialog(false)
+                  router.refresh()
+                }, 1500)
               }
             } catch (e) {
               console.log("[v0] Parse error:", e, "Line:", line)

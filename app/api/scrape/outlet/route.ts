@@ -324,15 +324,20 @@ export async function POST(request: NextRequest) {
           success: scoresSuccess,
         })
 
+        if (scoresSuccess && latestOutlets) {
+          try {
+            await saveOutletsToBlob(latestOutlets)
+            console.log("[v0] Final scores saved successfully")
+          } catch (e) {
+            console.log("[v0] Final scores save failed, but data was saved during each step")
+          }
+        }
+
         sendEvent({
           type: "complete",
           success: true,
           message: "Data refresh complete",
           updates: Object.keys(updates),
-        })
-
-        saveWithTimeout(latestOutlets, 8000).then((saved) => {
-          console.log("[v0] Final save result:", saved ? "success" : "timeout/failed")
         })
 
         controller.close()

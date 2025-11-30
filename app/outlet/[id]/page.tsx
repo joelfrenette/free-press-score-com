@@ -131,6 +131,11 @@ export default function OutletDetailPage() {
   const fundingData = getFundingDetails(outlet.funding)
   const hasIssues = (outlet.lawsuits?.length ?? 0) > 0 || (outlet.scandals?.length ?? 0) > 0
 
+  const factCheckScore = outlet.factCheckAccuracy ?? 0
+  const editorialScore = outlet.editorialIndependence ?? 0
+  const transparencyScore = outlet.transparency ?? 0
+  const freePressScore = outlet.freePressScore ?? 0
+
   return (
     <main className="min-h-screen bg-background">
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
@@ -189,12 +194,10 @@ export default function OutletDetailPage() {
                         Fact-Check Accuracy
                       </div>
                       <div className="flex items-baseline gap-1">
-                        <span className={`text-3xl font-bold ${getScoreColor(outlet.factCheckScore)}`}>
-                          {outlet.factCheckScore}
-                        </span>
+                        <span className={`text-3xl font-bold ${getScoreColor(factCheckScore)}`}>{factCheckScore}</span>
                         <span className="text-muted-foreground">/ 100</span>
                       </div>
-                      <Progress value={outlet.factCheckScore} className="h-2 mt-2" />
+                      <Progress value={factCheckScore} className="h-2 mt-2" />
                       <div className="text-xs text-primary mt-2">Updated: {formatDate(outlet.lastUpdated)}</div>
                     </CardContent>
                   </Card>
@@ -206,12 +209,10 @@ export default function OutletDetailPage() {
                         Editorial Independence
                       </div>
                       <div className="flex items-baseline gap-1">
-                        <span className={`text-3xl font-bold ${getScoreColor(outlet.editorialScore)}`}>
-                          {outlet.editorialScore}
-                        </span>
+                        <span className={`text-3xl font-bold ${getScoreColor(editorialScore)}`}>{editorialScore}</span>
                         <span className="text-muted-foreground">/ 100</span>
                       </div>
-                      <Progress value={outlet.editorialScore} className="h-2 mt-2" />
+                      <Progress value={editorialScore} className="h-2 mt-2" />
                       <div className="text-xs text-primary mt-2">Updated: {formatDate(outlet.lastUpdated)}</div>
                     </CardContent>
                   </Card>
@@ -223,12 +224,12 @@ export default function OutletDetailPage() {
                         Transparency
                       </div>
                       <div className="flex items-baseline gap-1">
-                        <span className={`text-3xl font-bold ${getScoreColor(outlet.transparencyScore)}`}>
-                          {outlet.transparencyScore}
+                        <span className={`text-3xl font-bold ${getScoreColor(transparencyScore)}`}>
+                          {transparencyScore}
                         </span>
                         <span className="text-muted-foreground">/ 100</span>
                       </div>
-                      <Progress value={outlet.transparencyScore} className="h-2 mt-2" />
+                      <Progress value={transparencyScore} className="h-2 mt-2" />
                       <div className="text-xs text-primary mt-2">Updated: {formatDate(outlet.lastUpdated)}</div>
                     </CardContent>
                   </Card>
@@ -243,15 +244,15 @@ export default function OutletDetailPage() {
                       <TrendingUp className="h-4 w-4" />
                       Free Press Score
                     </div>
-                    <div className={`text-5xl font-bold text-center ${getScoreColor(outlet.freePressScore)}`}>
-                      {outlet.freePressScore}
+                    <div className={`text-5xl font-bold text-center ${getScoreColor(freePressScore)}`}>
+                      {freePressScore}
                     </div>
                     <div className="text-sm text-muted-foreground text-center">out of 100</div>
                     <div className="text-xs text-primary text-center mt-2">
                       Updated: {formatDate(outlet.lastUpdated)}
                     </div>
                     <div className="mt-auto pt-4">
-                      <RefreshDataButton outletId={outlet.id} />
+                      <RefreshDataButton outletId={outlet.id} outletName={outlet.name} />
                     </div>
                   </CardContent>
                 </Card>
@@ -272,36 +273,45 @@ export default function OutletDetailPage() {
             </div>
 
             {/* Political Lean */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-2">
                 <span className="text-sm text-muted-foreground">Political Lean</span>
-                <Badge variant="outline" className={getBiasColor(outlet.biasScore)}>
+                <Badge variant="outline" className="text-primary border-primary">
                   {getBiasLabel(outlet.biasScore)} ({outlet.biasScore > 0 ? "+" : ""}
                   {outlet.biasScore.toFixed(1)})
                 </Badge>
               </div>
-              {/* Bias gradient bar */}
-              <div className="relative h-4 rounded-full overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-gray-400 to-red-700" />
-                {/* Center marker */}
-                <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-white/50" />
-                {/* Position indicator */}
+              <div className="relative">
+                <div className="h-4 rounded-full overflow-hidden bg-gradient-to-r from-blue-600 via-gray-400 to-red-600" />
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full border-2 border-foreground shadow-md"
-                  style={{ left: `${((outlet.biasScore + 10) / 20) * 100}%` }}
+                  className="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full border-3 border-foreground shadow-lg ring-2 ring-foreground/20"
+                  style={{
+                    left: `${((outlet.biasScore + 2) / 4) * 100}%`,
+                    transform: "translate(-50%, -50%)",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+                    border: "3px solid #1a1a1a",
+                  }}
                 />
               </div>
-              <div className="flex justify-between mt-1 text-xs text-muted-foreground">
-                <span>Far Left</span>
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span className="text-blue-600 font-medium">Far Left</span>
                 <span>Center</span>
-                <span>Far Right</span>
+                <span className="text-red-600 font-medium">Far Right</span>
               </div>
             </div>
 
             {/* Perspective Coverage */}
-            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-              <span className="text-sm">Perspective Coverage</span>
-              <Badge variant={outlet.perspectives === "multiple" ? "default" : "secondary"}>
+            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+              <span className="text-sm font-medium">Perspective Coverage</span>
+              <Badge
+                variant={
+                  outlet.perspectives === "multiple"
+                    ? "default"
+                    : outlet.perspectives === "limited"
+                      ? "secondary"
+                      : "outline"
+                }
+              >
                 {outlet.perspectives === "multiple"
                   ? "Multiple Perspectives"
                   : outlet.perspectives === "limited"
@@ -317,10 +327,13 @@ export default function OutletDetailPage() {
           {/* Ownership & Funding */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building2 className="h-5 w-5" />
-                Ownership & Funding
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5" />
+                  Ownership & Funding
+                </CardTitle>
+                <span className="text-xs text-primary">Updated: {formatDate(outlet.lastUpdated)}</span>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
@@ -361,10 +374,13 @@ export default function OutletDetailPage() {
           {/* Stakeholders & Board */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Key Stakeholders
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Key Stakeholders
+                </CardTitle>
+                <span className="text-xs text-primary">Updated: {formatDate(outlet.lastUpdated)}</span>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {outlet.stakeholders && outlet.stakeholders.length > 0 && (
@@ -408,10 +424,13 @@ export default function OutletDetailPage() {
           {/* Accountability & Retractions */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Flag className="h-5 w-5" />
-                Accountability Record
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Flag className="h-5 w-5" />
+                  Accountability Record
+                </CardTitle>
+                <span className="text-xs text-primary">Updated: {formatDate(outlet.lastUpdated)}</span>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {outlet.retractions && outlet.retractions.length > 0 ? (
@@ -452,10 +471,13 @@ export default function OutletDetailPage() {
           {/* Legal Issues & Scandals */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Scale className="h-5 w-5" />
-                Legal History & Scandals
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Scale className="h-5 w-5" />
+                  Legal History & Scandals
+                </CardTitle>
+                <span className="text-xs text-primary">Updated: {formatDate(outlet.lastUpdated)}</span>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {outlet.lawsuits && outlet.lawsuits.length > 0 ? (
@@ -513,10 +535,13 @@ export default function OutletDetailPage() {
         {/* Audience Metrics */}
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              Audience & Reach
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                Audience & Reach
+              </CardTitle>
+              <span className="text-xs text-primary">Updated: {formatDate(outlet.lastUpdated)}</span>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
