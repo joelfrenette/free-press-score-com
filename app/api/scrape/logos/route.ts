@@ -1,72 +1,52 @@
-import { loadOutletsFromBlob, saveOutletsToBlob } from "@/lib/blob-storage"
 import { searchImagesWithSERP } from "@/lib/data-scraping"
+import { loadOutletsFromBlob, saveOutletsToBlob } from "@/lib/blob-storage"
 import type { MediaOutlet } from "@/lib/types"
 
 export const maxDuration = 60
 
 export async function POST(request: Request) {
+  const { outletIds } = await request.json()
+
   const encoder = new TextEncoder()
+  let controllerClosed = false
 
   const stream = new ReadableStream({
     async start(controller) {
       const sendEvent = (data: Record<string, unknown>) => {
+        if (controllerClosed) return
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
-        } catch (e) {
-          console.error("[v0] Failed to send event:", e)
+        } catch {
+          controllerClosed = true
         }
       }
 
       let successCount = 0
       let failedCount = 0
       let totalOutlets = 0
+      let allOutlets: MediaOutlet[] = []
 
       try {
-        const body = await request.json()
-        const { outlets: requestedOutlets } = body
+        const blobData = await loadOutletsFromBlob()
+        allOutlets = blobData?.outlets || []
 
-        const { outlets: allOutlets } = await loadOutletsFromBlob()
-
-        if (!allOutlets) {
-          sendEvent({ type: "error", error: "No outlets found in storage" })
+        if (!allOutlets.length) {
+          sendEvent({
+            type: "complete",
+            totalProcessed: 0,
+            totalSuccess: 0,
+            totalFailed: 0,
+            message: "No outlets found in storage",
+          })
           controller.close()
           return
         }
 
-        // Filter to requested outlets if specified
-        let outletsToProcess: MediaOutlet[] = []
-        if (requestedOutlets && Array.isArray(requestedOutlets) && requestedOutlets.length > 0) {
-          const requestedIds = new Set(requestedOutlets.map((o: MediaOutlet) => o.id))
-          outletsToProcess = allOutlets.filter((o) => requestedIds.has(o.id))
-        } else {
-          outletsToProcess = allOutlets.filter((o) => o.scpiScore !== undefined)
-        }
+        const outletsToProcess = outletIds?.length ? allOutlets.filter((o) => outletIds.includes(o.id)) : allOutlets
 
         totalOutlets = outletsToProcess.length
 
-        // Send start event
-        sendEvent({
-          type: "start",
-          total: totalOutlets,
-          message: `Starting logo updates for ${totalOutlets} outlets`,
-        })
-
-        // Known blocked domains that return 403
-        const blockedDomains = [
-          "seeklogo.com",
-          "logowik.com",
-          "logos-world.net",
-          "logopng.com",
-          "pngitem.com",
-          "nicepng.com",
-          "clipartmax.com",
-          "pngegg.com",
-          "cleanpng.com",
-          "freepnglogos.com",
-          "pngfind.com",
-          "pngwing.com",
-        ]
-
+        const BATCH_SIZE = 10
         const updatedOutletsMap = new Map<string, MediaOutlet>()
 
         for (let i = 0; i < outletsToProcess.length; i++) {
@@ -74,45 +54,25 @@ export async function POST(request: Request) {
 
           try {
             let newLogoUrl: string | null = null
-            let source = "none"
 
             // Try SERP Images API first
-            if (process.env.SERP_API_KEY) {
-              try {
-                const images = await searchImagesWithSERP(`${outlet.name} official logo transparent png`, { num: 10 })
+            const images = await searchImagesWithSERP(`${outlet.name} official logo transparent png`, { num: 5 })
 
-                if (images && images.length > 0) {
-                  // Filter for images that look like logos
-                  const logoImages = images.filter((img) => {
-                    const titleLower = (img.title || "").toLowerCase()
-                    const sourceLower = (img.source || "").toLowerCase()
-                    const linkLower = (img.link || "").toLowerCase()
-                    return titleLower.includes("logo") || sourceLower.includes("logo") || linkLower.includes("logo")
-                  })
-
-                  // Try to find a working image URL
-                  const imagesToTry = logoImages.length > 0 ? logoImages : images.slice(0, 5)
-
-                  for (const img of imagesToTry) {
-                    // Prefer thumbnail as it's hosted on Google's servers
-                    const urlToTry = img.thumbnail || img.original
-                    if (!urlToTry) continue
-
-                    // Skip blocked domains for original URLs
-                    if (!img.thumbnail && blockedDomains.some((domain) => urlToTry.includes(domain))) {
-                      continue
-                    }
-
-                    // Use the thumbnail directly (Google-hosted, always accessible)
-                    if (img.thumbnail) {
-                      newLogoUrl = img.thumbnail
-                      source = "serp-images"
-                      break
-                    }
-                  }
+            if (images && images.length > 0) {
+              // Try to find a valid image
+              for (const image of images) {
+                // Prefer thumbnails (hosted by Google, always accessible)
+                if (image.thumbnail) {
+                  newLogoUrl = image.thumbnail
+                  break
                 }
-              } catch {
-                // SERP failed silently, try next source
+                // Fall back to original if no blocked domains
+                const blockedDomains = ["seeklogo.com", "logowik.com", "brandlogos.net", "logopng.com"]
+                const isBlocked = blockedDomains.some((domain) => image.original?.includes(domain))
+                if (!isBlocked && image.original) {
+                  newLogoUrl = image.original
+                  break
+                }
               }
             }
 
@@ -121,42 +81,33 @@ export async function POST(request: Request) {
               try {
                 const domain = new URL(outlet.website).hostname.replace("www.", "")
                 const clearbitUrl = `https://logo.clearbit.com/${domain}`
-                const response = await fetch(clearbitUrl, {
-                  method: "HEAD",
-                  signal: AbortSignal.timeout(5000),
-                })
+                const response = await fetch(clearbitUrl, { method: "HEAD", signal: AbortSignal.timeout(3000) })
                 if (response.ok) {
                   newLogoUrl = clearbitUrl
-                  source = "clearbit"
                 }
               } catch {
-                // Clearbit failed, try next
+                // Clearbit failed, continue to next fallback
               }
             }
 
-            // Fallback to Google Favicon - validate it actually works
+            // Fallback to Google Favicon
             if (!newLogoUrl && outlet.website) {
               try {
                 const domain = new URL(outlet.website).hostname
                 const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
-                // Validate the favicon actually exists
-                const response = await fetch(faviconUrl, {
-                  method: "HEAD",
-                  signal: AbortSignal.timeout(3000),
-                })
+                const response = await fetch(faviconUrl, { method: "HEAD", signal: AbortSignal.timeout(3000) })
                 if (response.ok) {
                   newLogoUrl = faviconUrl
-                  source = "google-favicon"
                 }
               } catch {
-                // Google favicon failed
+                // Favicon failed
               }
             }
 
-            if (newLogoUrl && newLogoUrl !== outlet.logo) {
+            if (newLogoUrl) {
+              successCount++
               const updatedOutlet = { ...outlet, logo: newLogoUrl }
               updatedOutletsMap.set(outlet.id, updatedOutlet)
-              successCount++
 
               sendEvent({
                 type: "progress",
@@ -169,28 +120,10 @@ export async function POST(request: Request) {
                   outletId: outlet.id,
                   outletName: outlet.name,
                   success: true,
-                  data: { logo: newLogoUrl, source },
-                },
-              })
-            } else if (newLogoUrl) {
-              // Logo unchanged
-              successCount++
-              sendEvent({
-                type: "progress",
-                current: i + 1,
-                total: totalOutlets,
-                outletId: outlet.id,
-                outletName: outlet.name,
-                success: true,
-                result: {
-                  outletId: outlet.id,
-                  outletName: outlet.name,
-                  success: true,
-                  data: { logo: outlet.logo, source: "unchanged" },
+                  logoUrl: newLogoUrl,
                 },
               })
             } else {
-              // No logo found
               failedCount++
               sendEvent({
                 type: "progress",
@@ -209,7 +142,6 @@ export async function POST(request: Request) {
             }
           } catch (error) {
             failedCount++
-
             sendEvent({
               type: "progress",
               current: i + 1,
@@ -225,6 +157,17 @@ export async function POST(request: Request) {
               },
             })
           }
+
+          if (updatedOutletsMap.size > 0 && (i + 1) % BATCH_SIZE === 0) {
+            try {
+              const currentOutlets = allOutlets.map((o) => updatedOutletsMap.get(o.id) || o)
+              await saveOutletsToBlob(currentOutlets)
+              // Update allOutlets with saved changes
+              allOutlets = currentOutlets
+            } catch (saveError) {
+              console.error("[v0] Batch save error (non-fatal):", saveError)
+            }
+          }
         }
 
         if (updatedOutletsMap.size > 0) {
@@ -232,8 +175,7 @@ export async function POST(request: Request) {
             const finalOutlets = allOutlets.map((o) => updatedOutletsMap.get(o.id) || o)
             await saveOutletsToBlob(finalOutlets)
           } catch (saveError) {
-            console.error("[v0] Blob save error:", saveError)
-            // Continue to send completion event even if save fails
+            console.error("[v0] Final save error (non-fatal):", saveError)
           }
         }
 
@@ -254,11 +196,13 @@ export async function POST(request: Request) {
           message: `Logo update ended with error: ${error instanceof Error ? error.message : "Unknown error"}`,
         })
       } finally {
-        await new Promise((resolve) => setTimeout(resolve, 200))
+        await new Promise((resolve) => setTimeout(resolve, 100))
         try {
-          controller.close()
+          if (!controllerClosed) {
+            controller.close()
+          }
         } catch {
-          // Controller may already be closed
+          // Already closed
         }
       }
     },
