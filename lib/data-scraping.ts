@@ -288,22 +288,62 @@ async function scrapeWebsiteWithScrapingBee(url: string): Promise<{ html: string
     const normalizedUrl = normalizeUrl(url)
     console.log(`[v0] Scraping ${normalizedUrl} with ScrapingBee...`)
     const apiUrl = `https://app.scrapingbee.com/api/v1/?api_key=${scrapingBeeKey}&url=${encodeURIComponent(normalizedUrl)}&render_js=false&premium_proxy=false`
-    const response = await fetch(apiUrl)
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+
+    let response: Response
+    try {
+      response = await fetch(apiUrl, { signal: controller.signal })
+    } catch (fetchError) {
+      clearTimeout(timeoutId)
+      console.log(
+        `[v0] ScrapingBee fetch failed for ${normalizedUrl}:`,
+        fetchError instanceof Error ? fetchError.message : "Unknown error",
+      )
+      return null
+    }
+    clearTimeout(timeoutId)
 
     if (!response.ok) {
-      console.log(`[v0] ScrapingBee returned ${response.status}`)
+      console.log(`[v0] ScrapingBee returned ${response.status} for ${normalizedUrl} - skipping`)
       return null
     }
 
     const html = await response.text()
 
-    const errorIndicators = [
+    if (html.length < 500) {
+      console.log(`[v0] ScrapingBee returned very short response (${html.length} bytes) - likely an error`)
+      return null
+    }
+
+    const strongErrorIndicators = [
+      "We can't find that page",
+      "we can't find that page",
       "Page Not Found",
       "Page not found",
+      "Error 404",
+      "<title>404",
+      "<title>Page Not Found",
+      'data-layout="basic-center-narrow"', // Reuters specific 404 layout
+      "we seem to have lost this page",
+      "This page doesn't exist",
+      "Sorry, we couldn't find",
+      "The page you're looking for",
+      "page you requested",
+    ]
+
+    // Check strong indicators first - these should ALWAYS trigger regardless of page size
+    const hasStrongError = strongErrorIndicators.some((indicator) => html.includes(indicator))
+    if (hasStrongError) {
+      console.log(`[v0] ScrapingBee detected error page for ${normalizedUrl} (strong indicator match) - skipping`)
+      return null
+    }
+
+    const errorIndicators = [
       "Page Unavailable",
       "page unavailable",
       "404",
-      "Error 404",
       "Not Found",
       "doesn't exist",
       "does not exist",
@@ -311,26 +351,23 @@ async function scrapeWebsiteWithScrapingBee(url: string): Promise<{ html: string
       "page isn't available",
       "couldn't find",
       "could not find",
-      "<title>404",
-      "<title>Page Not Found",
-      "<title>Page Unavailable",
       "error404",
       "page-not-found",
       "page-404",
       "notfound",
       'class="404"',
       'id="404"',
-      "We can't find",
       "we couldn't find",
-      "This page doesn't exist",
       "requested page",
       "no results found",
       "content not found",
       "article not found",
       "resource not found",
-      "Sorry, we couldn't",
       "Oops!",
       "Something went wrong",
+      "errorpage",
+      'content="404',
+      "errortype",
     ]
 
     const lowerHtml = html.toLowerCase()
@@ -338,19 +375,31 @@ async function scrapeWebsiteWithScrapingBee(url: string): Promise<{ html: string
     // Check title tag specifically for error indicators
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
     const pageTitle = titleMatch ? titleMatch[1].toLowerCase() : ""
-    const titleHasError = ["404", "not found", "unavailable", "error", "oops"].some((e) => pageTitle.includes(e))
+    const titleHasError = ["404", "not found", "unavailable", "error", "oops", "can't find", "couldn't find"].some(
+      (e) => pageTitle.includes(e),
+    )
 
     // Check body class for error pages
     const bodyClassMatch = html.match(/<body[^>]*class="([^"]+)"/i)
     const bodyClass = bodyClassMatch ? bodyClassMatch[1].toLowerCase() : ""
     const bodyHasErrorClass = ["404", "error", "not-found", "notfound"].some((e) => bodyClass.includes(e))
 
+    const metaErrorPage = html.includes('name="errorpage"') || html.includes('name="errortype"')
+
     const hasErrorIndicator = errorIndicators.some((indicator) => lowerHtml.includes(indicator.toLowerCase()))
 
     // If title or body class indicates error, or multiple error indicators found
-    if (titleHasError || bodyHasErrorClass || (hasErrorIndicator && html.length < 100000)) {
+    if (titleHasError || bodyHasErrorClass || metaErrorPage) {
       console.log(
-        `[v0] ScrapingBee returned error/404 page for ${normalizedUrl} (title: "${pageTitle}", bodyClass: "${bodyClass}")`,
+        `[v0] ScrapingBee detected error/404 page for ${normalizedUrl} (title: "${pageTitle}", bodyClass: ${bodyHasErrorClass}, metaError: ${metaErrorPage}) - skipping`,
+      )
+      return null
+    }
+
+    // For weak indicators, still check size to avoid false positives on legitimate pages
+    if (hasErrorIndicator && html.length < 100000) {
+      console.log(
+        `[v0] ScrapingBee detected possible error page for ${normalizedUrl} (weak indicator match) - skipping`,
       )
       return null
     }
@@ -358,7 +407,7 @@ async function scrapeWebsiteWithScrapingBee(url: string): Promise<{ html: string
     console.log(`[v0] ScrapingBee scraped ${html.length} bytes from ${normalizedUrl}`)
     return { html, success: true }
   } catch (error) {
-    console.log("[v0] ScrapingBee error:", error)
+    console.log("[v0] ScrapingBee unexpected error:", error instanceof Error ? error.message : "Unknown error")
     return null
   }
 }
@@ -919,34 +968,146 @@ export async function scrapeOwnershipData(
 
   const systemPrompt = `You are a media ownership research expert. Provide accurate, factual information about media company ownership structures. Always cite verifiable facts and return valid JSON.`
 
+  const KNOWN_ABOUT_URLS: Record<string, string[]> = {
+    nytimes: ["https://www.nytco.com/", "https://www.nytco.com/company/", "https://www.nytco.com/who-we-are/"],
+    "new york times": ["https://www.nytco.com/", "https://www.nytco.com/company/"],
+    "washington post": ["https://www.washingtonpost.com/about-the-post/"],
+    wsj: ["https://www.dowjones.com/about/", "https://www.wsj.com/about-us"],
+    "wall street journal": ["https://www.dowjones.com/about/"],
+    "fox news": ["https://www.foxcorporation.com/", "https://press.foxnews.com/about/"],
+    cnn: ["https://www.warnermedia.com/", "https://edition.cnn.com/about"],
+    msnbc: ["https://www.nbcuniversal.com/", "https://www.msnbc.com/msnbc/about"],
+    bbc: ["https://www.bbc.com/aboutthebbc", "https://www.bbc.co.uk/aboutthebbc"],
+    "abc news": ["https://abcnews.go.com/Site/page?id=3271346", "https://www.disney.com/"],
+    "cbs news": ["https://www.paramount.com/", "https://www.cbsnews.com/news/about-cbs-news/"],
+    "nbc news": ["https://www.nbcuniversal.com/", "https://www.nbcnews.com/pages/about-nbc-news"],
+    reuters: ["https://www.reuters.com/about/", "https://www.thomsonreuters.com/"],
+    ap: ["https://www.ap.org/about/", "https://www.ap.org/about/our-story"],
+    "associated press": ["https://www.ap.org/about/"],
+    politico: ["https://www.politico.com/about-us", "https://www.axelspringer.com/"],
+    huffpost: ["https://www.huffpost.com/static/about-us", "https://www.buzzfeed.com/"],
+    buzzfeed: [
+      "https://www.buzzfeed.com/about",
+      "https://www.buzzfeednews.com/article/buzzfeednews/about-buzzfeed-news",
+    ],
+    vice: ["https://company.vice.com/", "https://www.vice.com/en/page/about"],
+    vox: ["https://www.voxmedia.com/about", "https://www.vox.com/pages/about-us"],
+    "the guardian": ["https://www.theguardian.com/about", "https://www.theguardian.com/gnm-archive/guardian-history"],
+    "daily mail": ["https://www.dmgt.com/", "https://www.dailymail.co.uk/home/article-10538297/About-Daily-Mail.html"],
+    "la times": ["https://www.latimes.com/about", "https://www.tribpub.com/"],
+    "los angeles times": ["https://www.latimes.com/about"],
+    "chicago tribune": ["https://www.tribpub.com/", "https://www.chicagotribune.com/about/"],
+    "new york post": ["https://nypost.com/about/", "https://www.newscorp.com/"],
+    "usa today": ["https://www.usatoday.com/about/", "https://www.gannett.com/"],
+    breitbart: ["https://www.breitbart.com/the-company/"],
+    "the atlantic": ["https://www.theatlantic.com/company/", "https://www.theatlantic.com/about/"],
+    axios: ["https://www.axios.com/about"],
+    newsmax: ["https://www.newsmax.com/aboutnewsmax/"],
+    "the hill": ["https://thehill.com/about/"],
+    npr: ["https://www.npr.org/about/", "https://www.npr.org/about-npr/"],
+    pbs: ["https://www.pbs.org/about/", "https://www.pbs.org/about/corporate-information/"],
+  }
+
+  function getKnownAboutUrls(outletName: string): string[] {
+    const nameLower = outletName.toLowerCase().trim()
+
+    // Direct match
+    if (KNOWN_ABOUT_URLS[nameLower]) {
+      return KNOWN_ABOUT_URLS[nameLower]
+    }
+
+    // Partial match
+    for (const [key, urls] of Object.entries(KNOWN_ABOUT_URLS)) {
+      if (nameLower.includes(key) || key.includes(nameLower)) {
+        return urls
+      }
+    }
+
+    return []
+  }
+
   for (const outlet of outlets) {
     // First try to scrape about/ownership page with ScrapingBee
     let scrapedContext = ""
-    if (outlet.website) {
+    const knownUrls = getKnownAboutUrls(outlet.name)
+    let foundAboutPage = false
+
+    if (knownUrls.length > 0) {
+      console.log(`[v0] Trying known corporate URLs for ${outlet.name}:`, knownUrls)
+      for (const aboutUrl of knownUrls) {
+        try {
+          const webData = await scrapeWebsiteWithScrapingBee(aboutUrl)
+          if (webData?.success && webData.html.length > 1000) {
+            const extracted = extractDataFromHTML(webData.html, "ownership")
+            if (extracted) {
+              scrapedContext = `\n\nReal data scraped from ${aboutUrl}: ${JSON.stringify(extracted)}`
+              console.log(`[v0] Found about page data for ${outlet.name} at known URL: ${aboutUrl}`)
+              foundAboutPage = true
+              break
+            }
+          }
+        } catch (e) {
+          console.log(`[v0] Skipping known URL ${aboutUrl} - not accessible`)
+          continue
+        }
+      }
+    }
+
+    if (!foundAboutPage && outlet.website) {
       const baseUrl = normalizeUrl(outlet.website)
-      // Try common about page URLs
-      const aboutUrls = [`${baseUrl}/about`, `${baseUrl}/about-us`, `${baseUrl}/corporate`, `${baseUrl}/company`]
+      const aboutUrls = [
+        `${baseUrl}/about`,
+        `${baseUrl}/about-us`,
+        `${baseUrl}/corporate`,
+        `${baseUrl}/company`,
+        `${baseUrl}/who-we-are`,
+        `${baseUrl}/our-company`,
+        `${baseUrl}/company/about`,
+        `${baseUrl}/about/company`,
+        `${baseUrl}/aboutus`,
+      ]
+
+      let attempts = 0
+      const maxAttempts = 3
 
       for (const aboutUrl of aboutUrls) {
-        const webData = await scrapeWebsiteWithScrapingBee(aboutUrl)
-        if (webData?.success && webData.html.length > 1000) {
-          const extracted = extractDataFromHTML(webData.html, "ownership")
-          if (extracted) {
-            scrapedContext = `\n\nReal data scraped from ${aboutUrl}: ${JSON.stringify(extracted)}`
-            console.log(`[v0] Found about page data for ${outlet.name}`)
-            break
+        if (attempts >= maxAttempts) {
+          console.log(`[v0] Stopping after ${maxAttempts} failed attempts for ${outlet.name}`)
+          break
+        }
+
+        try {
+          const webData = await scrapeWebsiteWithScrapingBee(aboutUrl)
+          if (webData?.success && webData.html.length > 1000) {
+            const extracted = extractDataFromHTML(webData.html, "ownership")
+            if (extracted) {
+              scrapedContext = `\n\nReal data scraped from ${aboutUrl}: ${JSON.stringify(extracted)}`
+              console.log(`[v0] Found about page data for ${outlet.name}`)
+              foundAboutPage = true
+              break
+            }
           }
+          attempts++
+        } catch (e) {
+          console.log(`[v0] Skipping ${aboutUrl} - not accessible`)
+          attempts++
+          continue
         }
       }
     }
 
     // Also search SERP for ownership info
-    const serpResults = await searchWithSERP(`${outlet.name} ownership parent company`)
-    if (serpResults && serpResults.length > 0) {
-      scrapedContext += `\n\nSearch results about ownership: ${serpResults
-        .slice(0, 3)
-        .map((r: any) => `${r.title}: ${r.snippet}`)
-        .join("; ")}`
+    let serpContext = ""
+    try {
+      const serpResults = await searchWithSERP(`${outlet.name} ownership parent company`)
+      if (serpResults && serpResults.length > 0) {
+        serpContext = `\n\nSearch results about ownership: ${serpResults
+          .slice(0, 3)
+          .map((r: any) => `${r.title}: ${r.snippet}`)
+          .join("; ")}`
+      }
+    } catch (e) {
+      console.log(`[v0] SERP search failed for ${outlet.name} ownership - continuing without`)
     }
 
     const prompt = `Research the ownership structure of "${outlet.name}" media outlet. Provide:
@@ -956,7 +1117,7 @@ export async function scrapeOwnershipData(
 4. Key shareholders or stakeholders
 5. Any recent ownership changes
 6. Notable cross-media ownership connections
-${scrapedContext}
+${scrapedContext}${serpContext}
 
 Return as JSON:
 {

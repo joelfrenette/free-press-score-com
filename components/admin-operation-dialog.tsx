@@ -475,6 +475,20 @@ export function AdminOperationDialog({
     }
   }
 
+  const handleCancelAndClose = () => {
+    handleCancelOperation()
+    setOpen(false)
+    // Reset state after dialog animation completes
+    setTimeout(() => {
+      setView("filters")
+      setResults(null)
+      setProgress(0)
+      setLiveSuccess(0)
+      setLiveFailed(0)
+      setWasCancelled(false)
+    }, 200)
+  }
+
   const handleTryAgain = () => {
     setResults(null)
     setView("filters")
@@ -486,7 +500,8 @@ export function AdminOperationDialog({
 
   const handleOpenChange = (newOpen: boolean) => {
     if (view === "processing" && !newOpen) {
-      handleCancelOperation()
+      handleCancelAndClose()
+      return
     }
     if (newOpen) {
       setOpen(true)
@@ -687,7 +702,12 @@ export function AdminOperationDialog({
           </div>
         </div>
 
-        <p className="text-xs text-center text-muted-foreground">Click the X button to cancel the operation.</p>
+        <DialogFooter>
+          <Button variant="destructive" onClick={handleCancelAndClose} className="gap-2">
+            <XCircle className="h-4 w-4" />
+            Cancel Operation
+          </Button>
+        </DialogFooter>
       </div>
     </>
   )
@@ -813,7 +833,7 @@ export function AdminOperationDialog({
           {config.title}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" showCloseButton={view !== "processing"}>
         {view === "filters" && renderFiltersView()}
         {view === "processing" && renderProcessingView()}
         {view === "results" && renderResultsView()}
