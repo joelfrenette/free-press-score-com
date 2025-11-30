@@ -55,7 +55,7 @@ interface AdminDashboardClientProps {
 export function AdminDashboardClient({
   hasApiKey,
   totalOutlets: initialTotalOutlets,
-  scrapableOutlets,
+  scrapableOutlets: initialScrapableOutlets,
 }: AdminDashboardClientProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [email, setEmail] = useState("")
@@ -68,7 +68,8 @@ export function AdminDashboardClient({
   const [activeOperation, setActiveOperation] = useState<string | null>(null)
 
   const [currentOutletCount, setCurrentOutletCount] = useState(initialTotalOutlets)
-  const [scrapableCount, setScrapableCount] = useState(scrapableOutlets.length)
+  const [scrapableCount, setScrapableCount] = useState(initialScrapableOutlets.length)
+  const [currentScrapableOutlets, setCurrentScrapableOutlets] = useState(initialScrapableOutlets)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   const [showMergeDuplicatesDialog, setShowMergeDuplicatesDialog] = useState(false)
@@ -87,6 +88,9 @@ export function AdminDashboardClient({
         const data = await response.json()
         setCurrentOutletCount(data.totalOutlets)
         setScrapableCount(data.scrapable)
+        if (data.scrapableOutlets && Array.isArray(data.scrapableOutlets)) {
+          setCurrentScrapableOutlets(data.scrapableOutlets)
+        }
       }
     } catch (error) {
       console.error("Error refreshing stats:", error)
@@ -144,7 +148,6 @@ export function AdminDashboardClient({
               ? "duplicate"
               : "failed",
           reason: r.error,
-          // Pass through duplicate match info from API
           matchedExisting: r.data?.matchedExisting,
           matchType: r.data?.matchType,
         }))
@@ -218,7 +221,6 @@ export function AdminDashboardClient({
       failed: results.totalFailed,
       timestamp: results.timestamp,
     })
-    // Refresh stats to show updated totals
     refreshAllStats()
   }
 
@@ -378,12 +380,12 @@ export function AdminDashboardClient({
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-foreground">Update Ownership</h3>
-              <p className="text-sm text-muted-foreground">Refresh stakeholder and board member information</p>
+              <p className="text-sm text-muted-foreground">Research parent companies and stakeholders</p>
             </div>
           </div>
           <AdminOperationDialog
             operationType="ownership"
-            scrapableOutlets={scrapableOutlets}
+            scrapableOutlets={currentScrapableOutlets}
             disabled={isScraping || !hasApiKey}
             onOperationComplete={(results) => handleOperationComplete("ownership", results)}
           />
@@ -402,7 +404,7 @@ export function AdminDashboardClient({
           </div>
           <AdminOperationDialog
             operationType="funding"
-            scrapableOutlets={scrapableOutlets}
+            scrapableOutlets={currentScrapableOutlets}
             disabled={isScraping || !hasApiKey}
             onOperationComplete={(results) => handleOperationComplete("funding", results)}
           />
@@ -421,7 +423,7 @@ export function AdminDashboardClient({
           </div>
           <AdminOperationDialog
             operationType="legal"
-            scrapableOutlets={scrapableOutlets}
+            scrapableOutlets={currentScrapableOutlets}
             disabled={isScraping || !hasApiKey}
             onOperationComplete={(results) => handleOperationComplete("legal", results)}
           />
@@ -440,7 +442,7 @@ export function AdminDashboardClient({
           </div>
           <AdminOperationDialog
             operationType="accountability"
-            scrapableOutlets={scrapableOutlets}
+            scrapableOutlets={currentScrapableOutlets}
             disabled={isScraping || !hasApiKey}
             onOperationComplete={(results) => handleOperationComplete("accountability", results)}
           />
@@ -459,7 +461,7 @@ export function AdminDashboardClient({
           </div>
           <AdminOperationDialog
             operationType="audience"
-            scrapableOutlets={scrapableOutlets}
+            scrapableOutlets={currentScrapableOutlets}
             disabled={isScraping || !hasApiKey}
             onOperationComplete={(results) => handleOperationComplete("audience", results)}
           />
@@ -490,8 +492,8 @@ export function AdminDashboardClient({
         {/* Update Logos */}
         <Card className="p-6">
           <div className="mb-4 flex items-start gap-4">
-            <div className="rounded-lg bg-indigo-500/10 p-3">
-              <ImageIcon className="h-6 w-6 text-indigo-600" />
+            <div className="rounded-lg bg-pink-500/10 p-3">
+              <ImageIcon className="h-6 w-6 text-pink-600" />
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-foreground">Update Logos</h3>
@@ -502,7 +504,7 @@ export function AdminDashboardClient({
           </div>
           <AdminOperationDialog
             operationType="logos"
-            scrapableOutlets={scrapableOutlets}
+            scrapableOutlets={currentScrapableOutlets}
             disabled={isScraping || !hasApiKey}
             onOperationComplete={(results) => handleOperationComplete("logos", results)}
           />

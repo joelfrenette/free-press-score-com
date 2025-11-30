@@ -8,11 +8,22 @@ export async function GET() {
   await loadOutlets()
 
   const totalOutlets = getOutletCount()
-  const scrapable = mediaOutlets.filter((o) => o.website && o.website !== "N/A").length
+
+  const scrapableOutlets = mediaOutlets
+    .filter((o) => o.website && o.website !== "N/A")
+    .map((outlet) => ({
+      id: outlet.id,
+      name: outlet.name,
+      platform: outlet.platform,
+      outletType: outlet.type,
+      country: outlet.country,
+      mediaType: outlet.type,
+    }))
 
   return NextResponse.json({
     totalOutlets,
-    scrapable,
+    scrapable: scrapableOutlets.length,
+    scrapableOutlets, // Include full list for dialogs
     lastUpdated: new Date().toISOString(),
   })
 }
