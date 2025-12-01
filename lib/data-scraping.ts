@@ -37,11 +37,13 @@ function normalizeUrl(url: string): string {
 }
 
 export async function callAIWithCascade(prompt: string, systemPrompt: string): Promise<string | null> {
-  // 1. Try Groq FIRST (fastest - Llama on custom hardware, sub-second responses)
+  // Priority: Groq -> xAI -> OpenAI -> Anthropic -> Perplexity -> OpenRouter -> Gemini
+
+  // 1. Try Groq (fastest inference)
   const groqKey = process.env.GROQ_API_KEY
   if (groqKey && groqKey.length > 20) {
     try {
-      console.log("[v0] Trying Groq (fastest)...")
+      console.log("[v0] Trying Groq...")
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -49,7 +51,7 @@ export async function callAIWithCascade(prompt: string, systemPrompt: string): P
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          model: "llama-3.1-70b-versatile",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: prompt },
@@ -63,28 +65,23 @@ export async function callAIWithCascade(prompt: string, systemPrompt: string): P
         const data = await response.json()
         const content = data.choices?.[0]?.message?.content
         if (content) {
-          console.log("[v0] Groq response received (fastest provider)")
+          console.log("[v0] Groq response received")
           return content
         }
       } else {
         const status = response.status
-        if (status === 429) {
-          console.log("[v0] Groq rate limited - switching to next provider")
-        } else {
-          console.log(`[v0] Groq failed with status ${status}, trying next provider...`)
-        }
-        // Continue to next provider (don't return, let the cascade continue)
+        console.log(`[v0] Groq failed with status ${status}, trying next provider...`)
       }
     } catch (error) {
-      console.log("[v0] Groq network error, trying next provider")
+      console.log("[v0] Groq failed, trying next provider:", error)
     }
   }
 
-  // 2. Try Grok/xAI (fast, real-time data access)
+  // 2. Try xAI Grok (good reasoning)
   const xaiKey = process.env.XAI_API_KEY
   if (xaiKey && xaiKey.length > 20) {
     try {
-      console.log("[v0] Trying Grok/xAI...")
+      console.log("[v0] Trying xAI Grok...")
       const response = await fetch("https://api.x.ai/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -106,23 +103,19 @@ export async function callAIWithCascade(prompt: string, systemPrompt: string): P
         const data = await response.json()
         const content = data.choices?.[0]?.message?.content
         if (content) {
-          console.log("[v0] Grok response received")
+          console.log("[v0] xAI Grok response received")
           return content
         }
       } else {
         const status = response.status
-        if (status === 429) {
-          console.log("[v0] Grok rate limited or out of credits - switching to next provider")
-        } else {
-          console.log(`[v0] Grok failed with status ${status}, trying next provider...`)
-        }
+        console.log(`[v0] xAI Grok failed with status ${status}, trying next provider...`)
       }
     } catch (error) {
-      console.log("[v0] Grok network error, trying next provider")
+      console.log("[v0] xAI Grok failed, trying next provider:", error)
     }
   }
 
-  // 3. Try OpenAI (reliable, good quality)
+  // 3. Try OpenAI (reliable, fast, good quality)
   const openaiKey = process.env.OPENAI_API_KEY
   if (openaiKey && openaiKey.length > 20) {
     try {
@@ -153,7 +146,7 @@ export async function callAIWithCascade(prompt: string, systemPrompt: string): P
         }
       } else {
         const status = response.status
-        console.log(`[v0] OpenAI failed with status ${status}, continuing to next provider...`)
+        console.log(`[v0] OpenAI failed with status ${status}, trying next provider...`)
       }
     } catch (error) {
       console.log("[v0] OpenAI failed, trying next provider:", error)
@@ -175,8 +168,7 @@ export async function callAIWithCascade(prompt: string, systemPrompt: string): P
         body: JSON.stringify({
           model: "claude-3-haiku-20240307",
           max_tokens: 4000,
-          system: systemPrompt,
-          messages: [{ role: "user", content: prompt }],
+          messages: [{ role: "user", content: `${systemPrompt}\n\n${prompt}` }],
         }),
       })
 
@@ -189,7 +181,7 @@ export async function callAIWithCascade(prompt: string, systemPrompt: string): P
         }
       } else {
         const status = response.status
-        console.log(`[v0] Anthropic failed with status ${status}, continuing to next provider...`)
+        console.log(`[v0] Anthropic failed with status ${status}, trying next provider...`)
       }
     } catch (error) {
       console.log("[v0] Anthropic failed, trying next provider:", error)
@@ -227,14 +219,14 @@ export async function callAIWithCascade(prompt: string, systemPrompt: string): P
         }
       } else {
         const status = response.status
-        console.log(`[v0] Perplexity failed with status ${status}, continuing to next provider...`)
+        console.log(`[v0] Perplexity failed with status ${status}, trying next provider...`)
       }
     } catch (error) {
       console.log("[v0] Perplexity failed, trying next provider:", error)
     }
   }
 
-  // 6. Try OpenRouter (fallback with free models)
+  // 6. Try OpenRouter (access to many models)
   const openrouterKey = process.env.OPENROUTER_API_KEY
   if (openrouterKey && openrouterKey.length > 20) {
     try {
@@ -244,7 +236,6 @@ export async function callAIWithCascade(prompt: string, systemPrompt: string): P
         headers: {
           Authorization: `Bearer ${openrouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "https://free-press-scores.com",
         },
         body: JSON.stringify({
           model: "meta-llama/llama-3.1-8b-instruct:free",
@@ -266,14 +257,56 @@ export async function callAIWithCascade(prompt: string, systemPrompt: string): P
         }
       } else {
         const status = response.status
-        console.log(`[v0] OpenRouter failed with status ${status}`)
+        console.log(`[v0] OpenRouter failed with status ${status}, trying next provider...`)
       }
     } catch (error) {
-      console.log("[v0] OpenRouter failed")
+      console.log("[v0] OpenRouter failed, trying next provider:", error)
     }
   }
 
-  console.log("[v0] All AI providers failed")
+  // 7. Try Gemini
+  const geminiKey = process.env.GEMINI_API_KEY
+  if (geminiKey && geminiKey.length > 20) {
+    try {
+      console.log("[v0] Trying Gemini...")
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: `${systemPrompt}\n\n${prompt}` }],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 4000,
+            },
+          }),
+        },
+      )
+
+      if (response.ok) {
+        const data = await response.json()
+        const content = data.candidates?.[0]?.content?.parts?.[0]?.text
+        if (content) {
+          console.log("[v0] Gemini response received")
+          return content
+        }
+      } else {
+        const status = response.status
+        console.log(`[v0] Gemini failed with status ${status}`)
+      }
+    } catch (error) {
+      console.log("[v0] Gemini failed:", error)
+    }
+  }
+
+  console.log("[v0] All AI providers failed - no API keys available or all rate limited")
   return null
 }
 
