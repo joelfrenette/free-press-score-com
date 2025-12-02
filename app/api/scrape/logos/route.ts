@@ -1,5 +1,5 @@
 import { searchImagesWithSERP } from "@/lib/data-scraping"
-import { loadOutletsFromBlob, saveOutletsToBlob } from "@/lib/blob-storage"
+import { loadOutlets, getOutlets, updateOutlet, saveOutlets } from "@/lib/media-outlet-data"
 import type { MediaOutlet } from "@/lib/types"
 
 export const maxDuration = 60
@@ -24,11 +24,12 @@ export async function POST(request: Request) {
       let successCount = 0
       let failedCount = 0
       let totalOutlets = 0
-      let allOutlets: MediaOutlet[] = []
 
       try {
-        const blobData = await loadOutletsFromBlob()
-        allOutlets = blobData?.outlets || []
+        await loadOutlets()
+        const allOutlets = getOutlets()
+
+        console.log("[v0] Logos route: Loaded", allOutlets.length, "outlets from Supabase")
 
         if (!allOutlets.length) {
           sendEvent({
@@ -45,8 +46,9 @@ export async function POST(request: Request) {
         const outletsToProcess = outletIds?.length ? allOutlets.filter((o) => outletIds.includes(o.id)) : allOutlets
 
         totalOutlets = outletsToProcess.length
+        console.log("[v0] Processing logos for", totalOutlets, "outlets")
 
-        const updatedOutletsMap = new Map<string, MediaOutlet>()
+        const updatedOutlets: MediaOutlet[] = []
 
         for (let i = 0; i < outletsToProcess.length; i++) {
           const outlet = outletsToProcess[i]
@@ -105,7 +107,8 @@ export async function POST(request: Request) {
             if (newLogoUrl) {
               successCount++
               const updatedOutlet = { ...outlet, logo: newLogoUrl }
-              updatedOutletsMap.set(outlet.id, updatedOutlet)
+              updatedOutlets.push(updatedOutlet)
+              updateOutlet(outlet.id, { logo: newLogoUrl })
 
               sendEvent({
                 type: "progress",
@@ -165,10 +168,10 @@ export async function POST(request: Request) {
           message: `Logo update complete: ${successCount} updated, ${failedCount} failed`,
         })
 
-        if (updatedOutletsMap.size > 0) {
+        if (updatedOutlets.length > 0) {
           try {
-            const finalOutlets = allOutlets.map((o) => updatedOutletsMap.get(o.id) || o)
-            await saveOutletsToBlob(finalOutlets)
+            await saveOutlets()
+            console.log("[v0] Saved", updatedOutlets.length, "logo updates to Supabase")
           } catch (saveError) {
             console.error("[v0] Final save error:", saveError)
           }

@@ -262,8 +262,24 @@ export function getOutletCount(): number {
 }
 
 // Check if outlet exists by name or website
-export function outletExists(name: string, website?: string): MediaOutlet | null {
-  return checkForDuplicate({ name, website })
+export function outletExists(
+  name: string,
+  website?: string,
+): { exists: boolean; matchType?: string; matchedOutlet?: string } {
+  const duplicate = checkForDuplicate({ name, website })
+  if (duplicate) {
+    // Determine match type
+    let matchType = "name"
+    if (website && duplicate.website && duplicate.website.toLowerCase().includes(website.toLowerCase())) {
+      matchType = "website"
+    } else if (duplicate.name.toLowerCase() === name.toLowerCase()) {
+      matchType = "exact"
+    } else {
+      matchType = "similar"
+    }
+    return { exists: true, matchType, matchedOutlet: duplicate.name }
+  }
+  return { exists: false }
 }
 
 // Remove duplicate outlets by ID
