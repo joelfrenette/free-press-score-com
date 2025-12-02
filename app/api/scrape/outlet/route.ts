@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { loadOutletsFromBlob, saveOutletsToBlob } from "@/lib/blob-storage"
+import { loadOutlets, saveOutlets, getOutlets, updateOutlet } from "@/lib/media-outlet-data"
 import {
   scrapeOwnershipData,
   scrapeFundingData,
@@ -7,7 +7,6 @@ import {
   scrapeAudienceData,
   searchImagesWithSERP,
 } from "@/lib/data-scraping"
-import { saveOutlets, getOutlets, updateOutlet } from "@/lib/media-outlet-data"
 import type { MediaOutlet } from "@/lib/types"
 import { calculateScoresFromData } from "@/lib/score-calculation"
 
@@ -15,7 +14,7 @@ export const maxDuration = 60
 
 async function saveWithTimeout(outlets: MediaOutlet[], timeoutMs = 10000): Promise<boolean> {
   try {
-    const savePromise = saveOutletsToBlob(outlets)
+    const savePromise = saveOutlets(outlets)
     const timeoutPromise = new Promise<{ success: false }>((_, reject) =>
       setTimeout(() => reject(new Error("Save timeout")), timeoutMs),
     )
@@ -37,16 +36,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing outletId" }, { status: 400 })
     }
 
-    // Load outlets from blob
-    const { outlets } = await loadOutletsFromBlob()
+    await loadOutlets()
+    const outlets = getOutlets()
+
+    console.log("[v0] Loaded outlets for refresh:", outlets?.length || 0)
+
     if (!outlets || outlets.length === 0) {
       return NextResponse.json({ error: "No outlets found" }, { status: 404 })
     }
 
     const outlet = outlets.find((o: MediaOutlet) => o.id === outletId)
     if (!outlet) {
+      console.log(
+        "[v0] Outlet not found:",
+        outletId,
+        "Available IDs:",
+        outlets.map((o: MediaOutlet) => o.id).slice(0, 5),
+      )
       return NextResponse.json({ error: "Outlet not found" }, { status: 404 })
     }
+
+    console.log("[v0] Found outlet for refresh:", outlet.name)
 
     let latestOutlets = outlets
 
