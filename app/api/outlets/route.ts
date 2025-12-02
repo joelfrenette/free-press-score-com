@@ -1,14 +1,19 @@
-import { mediaOutlets, loadOutlets, saveOutlets } from "@/lib/media-outlet-data"
+import { mediaOutlets, loadOutlets } from "@/lib/media-outlet-data"
+import { saveOutletsToSupabase } from "@/lib/supabase-storage"
 import { NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
 export async function GET() {
-  await loadOutlets()
+  console.log("[v0] /api/outlets GET called")
 
-  // Return fresh outlets data
+  await loadOutlets()
+  console.log("[v0] mediaOutlets.length after load:", mediaOutlets.length)
+
   const scrapableCount = mediaOutlets.filter((o) => o.website && o.website.length > 0).length
+
+  console.log("[v0] Returning", mediaOutlets.length, "outlets to client")
 
   return NextResponse.json({
     outlets: mediaOutlets,
@@ -19,11 +24,11 @@ export async function GET() {
 
 export async function POST() {
   try {
-    const result = await saveOutlets()
+    const success = await saveOutletsToSupabase(mediaOutlets)
     return NextResponse.json({
-      success: result.success,
+      success,
       total: mediaOutlets.length,
-      error: result.error,
+      error: success ? undefined : "Failed to save to Supabase",
     })
   } catch (error) {
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 })

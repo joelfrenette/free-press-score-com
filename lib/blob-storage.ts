@@ -3,6 +3,7 @@ import type { MediaOutlet } from "./types"
 
 const OUTLETS_BLOB_NAME = "media-outlets.json"
 
+// Keep blob functions for migration purposes
 export async function saveOutletsToBlob(
   outlets: MediaOutlet[],
 ): Promise<{ success: boolean; url?: string; error?: string }> {
@@ -11,8 +12,8 @@ export async function saveOutletsToBlob(
     const blob = await put(OUTLETS_BLOB_NAME, jsonData, {
       access: "public",
       contentType: "application/json",
-      addRandomSuffix: false, // Keep consistent filename
-      allowOverwrite: true, // Added to fix "blob already exists" error
+      addRandomSuffix: false,
+      allowOverwrite: true,
     })
     console.log(`[v0] Saved ${outlets.length} outlets to Blob: ${blob.url}`)
     return { success: true, url: blob.url }
@@ -22,14 +23,14 @@ export async function saveOutletsToBlob(
   }
 }
 
-export async function loadOutletsFromBlob(): Promise<{ outlets: MediaOutlet[] | null; error?: string }> {
+export async function loadOutletsFromBlob(): Promise<MediaOutlet[]> {
   try {
     const { blobs } = await list()
     const outletBlob = blobs.find((b) => b.pathname === OUTLETS_BLOB_NAME || b.pathname.includes("media-outlets"))
 
     if (!outletBlob) {
-      console.log("[v0] No outlets blob found, will use seed data")
-      return { outlets: null }
+      console.log("[v0] No outlets blob found")
+      return []
     }
 
     const response = await fetch(outletBlob.url)
@@ -38,11 +39,11 @@ export async function loadOutletsFromBlob(): Promise<{ outlets: MediaOutlet[] | 
     }
 
     const outlets = (await response.json()) as MediaOutlet[]
-    console.log(`[v0] Loaded ${outlets.length} outlets from Blob`)
-    return { outlets }
+    console.log(`[v0] Loaded ${outlets.length} outlets from Blob (for migration)`)
+    return outlets
   } catch (error) {
     console.error("[v0] Error loading outlets from Blob:", error)
-    return { outlets: null, error: String(error) }
+    return []
   }
 }
 

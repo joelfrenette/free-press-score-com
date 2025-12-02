@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { saveOutletsToBlob } from "@/lib/blob-storage"
+import { saveOutletsToSupabase } from "@/lib/supabase-storage"
 import type { MediaOutlet } from "@/lib/types"
 
 export async function POST(request: Request) {
@@ -10,12 +10,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Invalid outlets data" }, { status: 400 })
     }
 
-    const result = await saveOutletsToBlob(outlets)
+    const success = await saveOutletsToSupabase(outlets)
 
-    if (result.success) {
-      return NextResponse.json({ success: true, url: result.url })
+    if (success) {
+      return NextResponse.json({ success: true, count: outlets.length })
     } else {
-      return NextResponse.json({ success: false, error: result.error }, { status: 500 })
+      return NextResponse.json({ success: false, error: "Failed to save to Supabase" }, { status: 500 })
     }
   } catch (error) {
     console.error("[v0] Error in save-outlets API:", error)

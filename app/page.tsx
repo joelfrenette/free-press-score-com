@@ -32,6 +32,14 @@ export default function Home() {
   const mediaOutlets = data?.outlets || []
   const [isRefreshing, setIsRefreshing] = useState(false)
 
+  console.log("[v0] SWR data:", {
+    outletsCount: mediaOutlets.length,
+    total: data?.total,
+    scrapable: data?.scrapable,
+    isLoading,
+    error: error?.message,
+  })
+
   const handleRefresh = async () => {
     setIsRefreshing(true)
     await mutate()
