@@ -251,6 +251,44 @@ export function findDuplicates(): Array<{ outlet1: MediaOutlet; outlet2: MediaOu
   return duplicates
 }
 
+// Alias for findDuplicates - used by duplicates route
+export function findAllDuplicates(): Array<{ outlet1: MediaOutlet; outlet2: MediaOutlet; reason: string }> {
+  return findDuplicates()
+}
+
+// Get outlet count
+export function getOutletCount(): number {
+  return mediaOutlets.length
+}
+
+// Check if outlet exists by name or website
+export function outletExists(name: string, website?: string): MediaOutlet | null {
+  return checkForDuplicate({ name, website })
+}
+
+// Remove duplicate outlets by ID
+export async function removeDuplicates(idsToRemove: string[]): Promise<number> {
+  const initialLength = mediaOutlets.length
+  const idsSet = new Set(idsToRemove)
+
+  // Filter out duplicates
+  const remaining = mediaOutlets.filter((outlet) => !idsSet.has(outlet.id))
+
+  // Update the array
+  mediaOutlets.length = 0
+  mediaOutlets.push(...remaining)
+
+  // Save to Supabase
+  await saveOutletsToSupabase(mediaOutlets)
+
+  return initialLength - mediaOutlets.length
+}
+
+// Save all outlets to Supabase
+export async function saveOutlets(): Promise<boolean> {
+  return saveOutletsToSupabase(mediaOutlets)
+}
+
 // Seed data - only used if Supabase is empty
 export const mediaOutlets: MediaOutlet[] = [
   {
