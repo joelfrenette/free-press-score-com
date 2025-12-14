@@ -1,5 +1,5 @@
 import { searchImagesWithSERP } from "@/lib/data-scraping"
-import { loadOutlets, getOutlets, updateOutlet, saveOutlets } from "@/lib/media-outlet-data"
+import { loadOutlets, getOutlets, updateOutlet } from "@/lib/media-outlet-data"
 import type { MediaOutlet } from "@/lib/types"
 
 export const maxDuration = 60
@@ -168,14 +168,7 @@ export async function POST(request: Request) {
           message: `Logo update complete: ${successCount} updated, ${failedCount} failed`,
         })
 
-        if (updatedOutlets.length > 0) {
-          try {
-            await saveOutlets()
-            console.log("[v0] Saved", updatedOutlets.length, "logo updates to Supabase")
-          } catch (saveError) {
-            console.error("[v0] Final save error:", saveError)
-          }
-        }
+        console.log("[v0] Logo updates saved to Supabase individually")
       } catch (error) {
         console.error("[v0] Update logos error:", error)
         sendEvent({

@@ -146,13 +146,14 @@ export async function saveOutletsToSupabase(outlets: MediaOutlet[]): Promise<boo
   try {
     const rows = outlets.map(outletToDbRow)
 
+    // Use upsert with on_conflict to properly update existing rows
     const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/media_outlets`, {
       method: "POST",
       headers: {
         apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
         "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates",
+        Prefer: "resolution=merge-duplicates,return=minimal",
       },
       body: JSON.stringify(rows),
     })
@@ -194,6 +195,60 @@ export async function deleteOutletFromSupabase(outletId: string): Promise<boolea
     return true
   } catch (error) {
     console.error("[Supabase] Error deleting outlet:", error)
+    return false
+  }
+}
+
+// Update a single outlet field in Supabase (more efficient for single field updates like logos)
+export async function updateOutletInSupabase(outletId: string, updates: Partial<MediaOutlet>): Promise<boolean> {
+  try {
+    // Convert camelCase to snake_case for database
+    const dbUpdates: Record<string, unknown> = {}
+
+    if (updates.logo !== undefined) dbUpdates.logo = updates.logo
+    if (updates.name !== undefined) dbUpdates.name = updates.name
+    if (updates.biasScore !== undefined) dbUpdates.bias_score = updates.biasScore
+    if (updates.freePressScore !== undefined) dbUpdates.free_press_score = updates.freePressScore
+    if (updates.description !== undefined) dbUpdates.description = updates.description
+    if (updates.website !== undefined) dbUpdates.website = updates.website
+    if (updates.ownership !== undefined) dbUpdates.ownership = updates.ownership
+    if (updates.funding !== undefined) dbUpdates.funding = updates.funding
+    if (updates.factCheckAccuracy !== undefined) dbUpdates.fact_check_accuracy = updates.factCheckAccuracy
+    if (updates.editorialIndependence !== undefined) dbUpdates.editorial_independence = updates.editorialIndependence
+    if (updates.transparency !== undefined) dbUpdates.transparency = updates.transparency
+    if (updates.lastUpdated !== undefined) dbUpdates.last_updated = updates.lastUpdated
+    if (updates.metrics !== undefined) dbUpdates.metrics = updates.metrics
+    if (updates.audienceData !== undefined) dbUpdates.audience_data = updates.audienceData
+    if (updates.legalCases !== undefined) dbUpdates.legal_cases = updates.legalCases
+    if (updates.accountability !== undefined) dbUpdates.accountability = updates.accountability
+
+    // Always update the updated_at timestamp
+    dbUpdates.updated_at = new Date().toISOString()
+
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/media_outlets?id=eq.${encodeURIComponent(outletId)}`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify(dbUpdates),
+      },
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error("[Supabase] Failed to update outlet:", response.status, errorText)
+      return false
+    }
+
+    console.log(`[Supabase] Updated outlet: ${outletId}`)
+    return true
+  } catch (error) {
+    console.error("[Supabase] Error updating outlet:", error)
     return false
   }
 }

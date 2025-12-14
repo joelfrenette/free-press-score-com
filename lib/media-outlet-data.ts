@@ -1,5 +1,10 @@
 import type { MediaOutlet } from "./types"
-import { loadOutletsFromSupabase, saveOutletToSupabase, saveOutletsToSupabase } from "./supabase-storage"
+import {
+  loadOutletsFromSupabase,
+  saveOutletToSupabase,
+  saveOutletsToSupabase,
+  updateOutletInSupabase, // Added import for single outlet updates
+} from "./supabase-storage"
 import { loadOutletsFromBlob } from "./blob-storage"
 
 export type { MediaOutlet } from "./types"
@@ -156,22 +161,23 @@ export function getOutletById(id: string): MediaOutlet | undefined {
   return mediaOutlets.find((outlet) => outlet.id === id)
 }
 
-export async function updateOutlet(id: string, updates: Partial<MediaOutlet>): Promise<MediaOutlet | null> {
-  const index = mediaOutlets.findIndex((outlet) => outlet.id === id)
-  if (index === -1) return null
-
-  const updatedOutlet = {
-    ...mediaOutlets[index],
-    ...updates,
-    lastUpdated: new Date().toISOString(),
+export function updateOutlet(id: string, updates: Partial<MediaOutlet>): boolean {
+  const outlet = mediaOutlets.find((o) => o.id === id)
+  if (!outlet) {
+    console.error("[v0] Outlet not found for update:", id)
+    return false
   }
 
-  mediaOutlets[index] = updatedOutlet
+  // Update in-memory
+  Object.assign(outlet, updates)
 
-  // Save immediately to Supabase
-  await saveOutletToSupabase(updatedOutlet)
+  // Update in Supabase immediately for single field updates (like logos)
+  // Don't await - fire and forget for better performance during batch operations
+  updateOutletInSupabase(id, updates).catch((error) => {
+    console.error("[v0] Failed to update outlet in Supabase:", id, error)
+  })
 
-  return updatedOutlet
+  return true
 }
 
 export async function addOutlet(outlet: MediaOutlet): Promise<MediaOutlet> {
